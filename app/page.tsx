@@ -540,90 +540,82 @@ function extractInvoiceData(text: string): Partial<FormState> {
   const clean = normalizeOcrText(text);
   const result: Partial<FormState> = {};
 
-  // 1. Datos con etiquetas muy específicas.
-  const estrato = clean.match(/(?:estrato|clase)\s*(?:socioecon[oó]mico)?[^\d]{0,15}([1-6])\b/i);
+  const municipality =
+    clean.match(
+      /municipio\\s*[:\\-]?\\s*(?:\\d{1,4}\\s+)?([A-Za-zÁÉÍÓÚáéíóúÑñ]{3,30})(?=\\s*[-:]?\\s*servicio|\\s+ciclo|$)/i
+    ) ||
+    clean.match(
+      /municipio\\s*[:\\-]?\\s*(?:\\d{1,4}\\s+)?([A-Za-zÁÉÍÓÚáéíóúÑñ]{3,30})/i
+    );
+
+  if (municipality) result.municipality = municipality[1].trim();
+
+  const estrato =
+    clean.match(/(?:estrato|est|clase)\\s*(?:socioeconom[oó]mico)?\\s*[:.]?\\s*0?([1-6])\\b/i);
+
   if (estrato) result.estrato = estrato[1];
 
-  const days = clean.match(
-    /(?:d[ií]as\s+facturados|dias\s+facturados|d[ií]as)\s*[:\-]?\s*(\d{1,3})\b/i
-  );
+  const days =
+    clean.match(/d[ií]as\\s+facturados\\s*[:.\\-]?\\s*(\\d{1,3})\\b/i) ||
+    clean.match(/d[ií]as\\s+facturados[\\s\\S]{0,50}?(\\d{1,3})\\b/i);
+
   if (days) result.days = days[1];
 
-  const period =
-    clean.match(/(?:periodo|per[ií]odo)\s*(?:facturado)?[^\d]{0,20}(\d{1,2})[\/-](\d{4})/i) ||
-    clean.match(/(?:periodo|per[ií]odo)\s*(?:facturado)?[^\d]{0,20}(\d{4})[\/-](\d{1,2})/i);
+  const monthMap: Record<string, string> = {
+    ene: "01", enero: "01",
+    feb: "02", febrero: "02",
+    mar: "03", marzo: "03",
+    abr: "04", abril: "04",
+    may: "05", mayo: "05",
+    jun: "06", junio: "06",
+    jul: "07", julio: "07",
+    ago: "08", agosto: "08",
+    sep: "09", septiembre: "09",
+    oct: "10", octubre: "10",
+    nov: "11", noviembre: "11",
+    dic: "12", diciembre: "12",
+  };
 
-  if (period) {
-    const first = Number(period[1]);
-    const second = Number(period[2]);
+  const periodWithMonth = clean.match(
+    /(?:periodo|per[ií]odo)(?:\\s+facturado)?[\\s:]*(\\d{1,2})\\s*[/\\-]\\s*([A-Za-z]{3,10})\\s*[/\\-]\\s*(\\d{4})/i
+  );
+
+  const periodNumeric = clean.match(
+    /(?:periodo|per[ií]odo)(?:\\s+facturado)?[\\s:]*(\\d{1,2})\\s*[/\\-]\\s*(\\d{4})/i
+  );
+
+  if (periodWithMonth) {
+    const month = monthMap[periodWithMonth[2].toLowerCase()];
+    if (month) result.period = periodWithMonth[3] + "-" + month;
+  } else if (periodNumeric) {
+    const first = Number(periodNumeric[1]);
+    const second = Number(periodNumeric[2]);
     const year = first > 12 ? first : second;
     const month = first > 12 ? second : first;
+
     if (year >= 2020 && month >= 1 && month <= 12) {
-      result.period = `${year}-${String(month).padStart(2, "0")}`;
+      result.period = year + "-" + String(month).padStart(2, "0");
     }
   }
 
-  // 2. Lecturas: solo aceptamos números enteros largos junto a la etiqueta.
-  const previous = clean.match(
-    /(?:lectura\s+anterior|lectura\s*ant\.?)[^\d]{0,35}(\d{3,8})\b/i
-  );
-  const current = clean.match(
-    /(?:lectura\s+actual|lectura\s*act\.?)[^\d]{0,35}(\d{3,8})\b/i
-  );
-  if (previous) result.previous = previous[1];
-  if (current) result.current = current[1];
-
-  // 3. Municipio: preferimos la zona de datos técnicos y luego "municipio".
-  const municipality =
-    clean.match(/municipio\s*:\s*\d*\s*([A-Za-zÁÉÍÓÚáéíóúÑñ ]{3,40}?)(?=\s*-\s*servicio|\s+servicio\s*:|\s+ciclo\s*:|$)/i) ||
-    clean.match(/municipio\s*:\s*\d*\s*([A-Za-zÁÉÍÓÚáéíóúÑñ]{3,30})/i);
-
-  if (municipality) {
-    result.municipality = municipality[1].trim();
+  // La lectura del medidor es la fuente prioritaria para el consumo.
+  const reading = extractReadingFromText(clean);
+  if (reading) {
+    Object.assign(result, reading);
   }
 
-  // 4. Consumo: NO tomamos el primer número cercano a "energía".
-  // En una factura aparecen muchos valores monetarios que también contienen
-  // "energía". Priorizamos exclusivamente la fila de "Consumo kWh" dentro
-  // de "LIQUIDACIÓN DEL CONSUMO ACTUAL".
-  const liquidationIndex = clean.search(/liquidaci[oó]n\s+del\s+consumo\s+actual/i);
-  const liquidation = liquidationIndex >= 0
-    ? clean.slice(liquidationIndex, liquidationIndex + 1800)
-    : clean;
-
-  const kwhLabelIndex = liquidation.search(/consumo\s*kwh/i);
-
-  if (kwhLabelIndex >= 0) {
-    const afterLabel = liquidation.slice(kwhLabelIndex + 10, kwhLabelIndex + 500);
-    const candidates = numberCandidates(afterLabel)
-      .filter(({ value }) => value > 0 && value < 2000)
-      .filter(({ raw }) => !/^\d{4}$/.test(raw));
-
-    // El valor monetario suele tener 3 grupos/dígitos y aparece después
-    // de "Valor kwh" o "Total energía"; evitamos esos campos.
-    const monetaryIndex = afterLabel.search(/valor\s+kwh|total\s+energ[ií]a|subsidio|total\b/i);
-    const beforeMoney = monetaryIndex >= 0 ? afterLabel.slice(0, monetaryIndex) : afterLabel;
-
-    const firstConsumption = numberCandidates(beforeMoney)
-      .filter(({ value }) => value > 0 && value < 2000)
-      .filter(({ raw }) => !/^\d{4}$/.test(raw))[0];
-
-    if (firstConsumption) {
-      result.kwh = String(firstConsumption.value);
-    } else if (candidates[0]) {
-      result.kwh = String(candidates[0].value);
-    }
-  }
-
-  // 5. Fallback muy restringido: solo cuando la factura dice explícitamente
-  // "consumo" y luego un valor seguido por kWh.
+  // Para OCR nunca confiamos en el primer número después de "Consumo kWh":
+  // puede ser 10, 173 u otro valor parcial de la tabla tarifaria.
+  // Si no tenemos lecturas, dejamos que la extracción espacial del TSV
+  // proporcione candidatos válidos.
   if (!result.kwh) {
     const explicitKwh = clean.match(
-      /(?:consumo|consumo\s+actual)[^\d]{0,30}(\d{1,4}(?:[.,]\d{1,2})?)\s*kwh\b/i
+      /(?:consumo\\s+kwh|consumo\\s+actual|consumo)[^\\d]{0,35}(\\d{1,4}(?:[.,]\\d{1,2})?)\\s*kwh\\b/i
     );
+
     if (explicitKwh) {
       const value = parseNumber(explicitKwh[1]);
-      if (value !== null && value > 0 && value < 2000) {
+      if (value !== null && value >= 20 && value < 2000) {
         result.kwh = String(value);
       }
     }
