@@ -717,3 +717,43 @@ button:disabled {
     grid-column: auto;
   }
 }
+
+.pdf-selected-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: #fbfdfb;
+}
+
+.pdf-icon {
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  border-radius: 13px;
+  background: #fff0ee;
+  color: #b42318;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.pdf-selected-card div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.pdf-selected-card strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.pdf-selected-card small {
+  color: var(--muted);
+  font-size: 11px;
+}
