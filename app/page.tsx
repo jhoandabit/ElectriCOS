@@ -31,6 +31,120 @@ function parseNumber(value: string) {
   return Number.isFinite(number) ? number : null;
 }
 
+function preprocessInvoiceImage(file: File, mode: "gray" | "binary") {
+  return new Promise<Blob>((resolve, reject) => {
+    const image = new Image();
+    const objectUrl = URL.createObjectURL(file);
+
+    image.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+
+      const maxWidth = 2600;
+      const scale = Math.min(1.35, maxWidth / image.naturalWidth);
+      const width = Math.max(1200, Math.round(image.naturalWidth * scale));
+      const height = Math.round(image.naturalHeight * (width / image.naturalWidth));
+
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+
+      const context = canvas.getContext("2d", { willReadFrequently: true });
+      if (!context) {
+        reject(new Error("No se pudo preparar la imagen."));
+        return;
+      }
+
+      context.imageSmoothingEnabled = true;
+      context.imageSmoothingQuality = "high";
+      context.drawImage(image, 0, 0, width, height);
+
+      const imageData = context.getImageData(0, 0, width, height);
+      const data = imageData.data;
+
+      let sum = 0;
+      const luminance = new Uint8Array(width * height);
+
+      for (let i = 0, p = 0; i < data.length; i += 4, p++) {
+        const y = Math.round(
+          0.299 * data[i] +
+          0.587 * data[i + 1] +
+          0.114 * data[i + 2]
+        );
+        luminance[p] = y;
+        sum += y;
+      }
+
+      const mean = sum / luminance.length;
+
+      for (let i = 0, p = 0; i < data.length; i += 4, p++) {
+        let y = luminance[p];
+
+        if (mode === "gray") {
+          // Aumenta contraste sin destruir los trazos finos de la factura.
+          y = Math.max(0, Math.min(255, Math.round((y - mean) * 1.55 + 128)));
+        } else {
+          // Binarización conservadora: evita que el fondo gris de la factura
+          // se convierta en ruido negro.
+          const threshold = mean - 8;
+          y = luminance[p] < threshold ? 0 : 255;
+        }
+
+        data[i] = y;
+        data[i + 1] = y;
+        data[i + 2] = y;
+        data[i + 3] = 255;
+      }
+
+      context.putImageData(imageData, 0, 0);
+
+      canvas.toBlob(
+        (blob) => {
+          if (blob) resolve(blob);
+          else reject(new Error("No se pudo generar la imagen procesada."));
+        },
+        "image/jpeg",
+        0.94
+      );
+    };
+
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("No se pudo abrir la imagen."));
+    };
+
+    image.src = objectUrl;
+  });
+}
+
+function scoreOcrText(text: string, confidence: number) {
+  const normalized = text.toLowerCase();
+  let score = confidence || 0;
+
+  const usefulTerms = [
+    "consumo",
+    "energía",
+    "energia",
+    "kwh",
+    "lectura",
+    "actual",
+    "anterior",
+    "estrato",
+    "periodo",
+    "factura",
+    "municipio",
+    "total",
+  ];
+
+  for (const term of usefulTerms) {
+    if (normalized.includes(term)) score += 4;
+  }
+
+  const numericMatches = text.match(/\b\d{2,4}(?:[.,]\d{1,2})?\b/g);
+  score += Math.min(20, (numericMatches?.length ?? 0) * 1.5);
+
+  return score;
+}
+
 function extractInvoiceData(text: string): Partial<FormState> {
   const clean = text.replace(/\r/g, " ").replace(/[|]/g, " ");
   const result: Partial<FormState> = {};
@@ -155,38 +269,83 @@ export default function Home() {
     setOcrRunning(true);
     setError("");
     setOcrText("");
-    setOcrStatus("Preparando reconocimiento de texto…");
+    setOcrStatus("Preparando imagen para lectura…");
+
+    let worker: Awaited<ReturnType<typeof import("tesseract.js").createWorker>> | null = null;
 
     try {
-      const { createWorker } = await import("tesseract.js");
-      const worker = await createWorker("spa", 1, {
+      const { createWorker, PSM } = await import("tesseract.js");
+
+      worker = await createWorker("spa", 1, {
         logger: (message) => {
           if (message.status === "recognizing text" && typeof message.progress === "number") {
-            setOcrStatus(`Leyendo factura… ${Math.round(message.progress * 100)}%`);
+            setOcrStatus(`Analizando factura… ${Math.round(message.progress * 100)}%`);
           } else if (message.status) {
             setOcrStatus("Preparando reconocimiento…");
           }
         },
       });
 
-      const result = await worker.recognize(invoiceFile);
-      await worker.terminate();
+      // PSM.AUTO es más apropiado para facturas completas con varias zonas.
+      // Tesseract.js documenta que el aumento de resolución puede mejorar
+      // notablemente el reconocimiento y permite ajustar el modo de segmentación.
+      await worker.setParameters({
+        tessedit_pageseg_mode: PSM.AUTO,
+        preserve_interword_spaces: "1",
+        user_defined_dpi: "300",
+      });
 
-      const text = result.data.text.trim();
-      setOcrText(text);
+      const variants = [
+        { name: "imagen mejorada", mode: "gray" as const },
+        { name: "imagen de alto contraste", mode: "binary" as const },
+      ];
 
-      if (!text) {
-        setOcrStatus("No se encontró texto legible. Intenta con una foto más nítida.");
+      const results: Array<{ text: string; confidence: number; score: number; name: string }> = [];
+
+      for (let index = 0; index < variants.length; index += 1) {
+        const variant = variants[index];
+        setOcrStatus(`Leyendo factura (${index + 1} de ${variants.length})…`);
+
+        const processed = await preprocessInvoiceImage(invoiceFile, variant.mode);
+        const result = await worker.recognize(processed);
+        const text = result.data.text?.trim() ?? "";
+        const confidence = typeof result.data.confidence === "number" ? result.data.confidence : 0;
+
+        if (text) {
+          results.push({
+            text,
+            confidence,
+            score: scoreOcrText(text, confidence),
+            name: variant.name,
+          });
+        }
+      }
+
+      if (!results.length) {
+        setOcrStatus("No se encontró texto legible. Intenta con una foto completa, nítida y bien iluminada.");
         return;
       }
 
-      const extracted = extractInvoiceData(text);
+      results.sort((a, b) => b.score - a.score);
+      const best = results[0];
+
+      setOcrText(best.text);
+
+      const extracted = extractInvoiceData(best.text);
       setForm((current) => ({ ...current, ...extracted }));
-      setOcrStatus("Lectura terminada. Revisa y corrige los datos antes de guardar.");
+
+      if (best.confidence < 55) {
+        setOcrStatus("Lectura realizada con baja confianza. Revisa los datos antes de continuar.");
+      } else {
+        setOcrStatus("Lectura terminada. Revisa y corrige los datos antes de guardar.");
+      }
     } catch {
       setError("No fue posible procesar la factura. Puedes corregir los datos manualmente.");
       setOcrStatus("");
     } finally {
+      if (worker) {
+        await worker.terminate().catch(() => undefined);
+      }
       setOcrRunning(false);
     }
   };
