@@ -221,10 +221,18 @@ function extractStructuredPdfData(text: string): Partial<FormState> {
 
 async function extractInvoicePdf(file: File) {
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+
+  // PDF.js 6.x ya no expone "disableWorker" en DocumentInitParameters.
+  // Configuramos explícitamente el worker para que la lectura del PDF
+  // funcione también en producción con Next.js/Vercel.
+  pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+    "pdfjs-dist/legacy/build/pdf.worker.mjs",
+    import.meta.url
+  ).toString();
+
   const buffer = await file.arrayBuffer();
   const pdf = await pdfjs.getDocument({
     data: new Uint8Array(buffer),
-    disableWorker: true,
   }).promise;
 
   const pages: string[] = [];
