@@ -167,6 +167,108 @@ function numberCandidates(text: string) {
     );
 }
 
+function extractKwhFromTsv(tsv: string) {
+  if (!tsv) return null;
+
+  type OcrWord = {
+    lineKey: string;
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+    text: string;
+    confidence: number;
+  };
+
+  const words: OcrWord[] = [];
+  const lines = tsv.split(/\r?\n/);
+
+  for (const line of lines.slice(1)) {
+    const parts = line.split("\t");
+    if (parts.length < 12) continue;
+
+    const text = parts.slice(11).join("\t").trim();
+    const left = Number(parts[6]);
+    const top = Number(parts[7]);
+    const width = Number(parts[8]);
+    const height = Number(parts[9]);
+    const confidence = Number(parts[10]);
+
+    if (!text || !Number.isFinite(left) || !Number.isFinite(top)) continue;
+
+    words.push({
+      lineKey: `${parts[1]}-${parts[2]}-${parts[3]}-${parts[4]}`,
+      left,
+      top,
+      width,
+      height,
+      text,
+      confidence: Number.isFinite(confidence) ? confidence : 0,
+    });
+  }
+
+  const normalize = (value: string) =>
+    value
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim();
+
+  const grouped = new Map<string, OcrWord[]>();
+  for (const word of words) {
+    const list = grouped.get(word.lineKey) ?? [];
+    list.push(word);
+    grouped.set(word.lineKey, list);
+  }
+
+  // Buscamos específicamente el encabezado "Consumo kWh".
+  // Después buscamos el primer número debajo de esa columna.
+  // Esto evita confundir 156,574 (total energía) o $349,864 (total factura)
+  // con el consumo de 173 kWh.
+  for (const lineWords of grouped.values()) {
+    lineWords.sort((a, b) => a.left - b.left);
+    const lineText = normalize(lineWords.map((word) => word.text).join(" "));
+
+    if (!lineText.includes("consumo") || !lineText.includes("kwh")) continue;
+
+    const consumoWords = lineWords.filter((word) => normalize(word.text).includes("consumo"));
+    const kwhWords = lineWords.filter((word) => normalize(word.text) === "kwh");
+
+    const anchorWords = [...consumoWords, ...kwhWords];
+    if (!anchorWords.length) continue;
+
+    const left = Math.min(...anchorWords.map((word) => word.left));
+    const right = Math.max(...anchorWords.map((word) => word.left + word.width));
+    const centerX = (left + right) / 2;
+    const headerBottom = Math.max(...anchorWords.map((word) => word.top + word.height));
+
+    const candidates = words
+      .filter((word) => word.top > headerBottom + 2 && word.top < headerBottom + 150)
+      .filter((word) => {
+        const center = word.left + word.width / 2;
+        return Math.abs(center - centerX) <= 75;
+      })
+      .map((word) => ({
+        ...word,
+        value: parseNumber(word.text.replace(/[^0-9.,]/g, "")),
+      }))
+      .filter((word) =>
+        word.value !== null &&
+        word.value > 0 &&
+        word.value < 2000 &&
+        word.confidence >= 20
+      )
+      .sort((a, b) => a.top - b.top);
+
+    if (candidates.length) {
+      return String(candidates[0].value);
+    }
+  }
+
+  return null;
+}
+
 function extractInvoiceData(text: string): Partial<FormState> {
   const clean = normalizeOcrText(text);
   const result: Partial<FormState> = {};
@@ -384,14 +486,26 @@ export default function Home() {
         });
 
         const processed = await preprocessInvoiceImage(invoiceFile, variant.mode);
-        const result = await worker.recognize(processed);
+        const result = await worker.recognize(
+          processed,
+          {},
+          { tsv: true }
+        );
         const text = result.data.text?.trim() ?? "";
         const confidence = typeof result.data.confidence === "number" ? result.data.confidence : 0;
 
         if (text) {
           const extracted = extractInvoiceData(text);
+          const spatialKwh = typeof result.data.tsv === "string"
+            ? extractKwhFromTsv(result.data.tsv)
+            : null;
+
+          if (spatialKwh) {
+            extracted.kwh = spatialKwh;
+          }
+
           const fieldCount = Object.keys(extracted).length;
-          const score = scoreOcrText(text, confidence) + fieldCount * 25 + (extracted.kwh ? 80 : 0);
+          const score = scoreOcrText(text, confidence) + fieldCount * 25 + (spatialKwh ? 160 : 0);
 
           results.push({
             text,
