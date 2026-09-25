@@ -31,7 +31,7 @@ function parseNumber(value: string) {
   return Number.isFinite(number) ? number : null;
 }
 
-function preprocessInvoiceImage(file: File, mode: "gray" | "binary") {
+function preprocessInvoiceImage(file: File, mode: "gray" | "binary" | "original") {
   return new Promise<Blob>((resolve, reject) => {
     const image = new Image();
     const objectUrl = URL.createObjectURL(file);
@@ -82,12 +82,16 @@ function preprocessInvoiceImage(file: File, mode: "gray" | "binary") {
       for (let i = 0, p = 0; i < data.length; i += 4, p++) {
         let y = luminance[p];
 
+        if (mode === "original") {
+          // Conservamos el color original. Algunas facturas usan texto
+          // naranja/verde sobre fondo claro y el paso a gris puede reducir
+          // demasiado el contraste de esos elementos.
+          continue;
+        }
+
         if (mode === "gray") {
-          // Aumenta contraste sin destruir los trazos finos de la factura.
           y = Math.max(0, Math.min(255, Math.round((y - mean) * 1.55 + 128)));
         } else {
-          // Binarización conservadora: evita que el fondo gris de la factura
-          // se convierta en ruido negro.
           const threshold = mean - 8;
           y = luminance[p] < threshold ? 0 : 255;
         }
@@ -206,23 +210,47 @@ function nearbyPdfText(
 }
 
 function extractReadingFromText(text: string) {
-  const triples = Array.from(
-    text.matchAll(/\b(\d{4,6})\s+(\d{4,6})\s+(\d{2,4})\b/g)
-  )
-    .map((match) => [Number(match[1]), Number(match[2]), Number(match[3])])
-    .filter(([a, b, consumption]) => {
-      const difference = Math.abs(a - b);
-      return difference === consumption && consumption >= 20 && consumption < 2000;
-    });
+  const tokens = Array.from(
+    text.matchAll(/\b\d{1,6}(?:[.,]\d{1,2})?\b/g)
+  ).map((match) => ({
+    value: parseNumber(match[0]),
+    index: match.index ?? 0,
+  }));
 
-  if (!triples.length) return null;
+  const readings = tokens
+    .filter((token) => token.value !== null && Number.isInteger(token.value) && token.value >= 1000 && token.value <= 999999)
+    .map((token) => token.value as number);
 
-  const [a, b, consumption] = triples[0];
-  return {
-    previous: String(Math.min(a, b)),
-    current: String(Math.max(a, b)),
-    kwh: String(consumption),
-  };
+  const consumptions = tokens
+    .filter((token) => token.value !== null && token.value >= 20 && token.value < 2000)
+    .map((token) => token.value as number);
+
+  // En OCR los tres números pueden quedar separados por palabras, columnas
+  // o saltos de línea. Buscamos una relación matemática válida dentro de una
+  // ventana razonable del texto, en vez de exigir que sean consecutivos.
+  for (const a of readings) {
+    for (const b of readings) {
+      if (a === b) continue;
+
+      const consumption = Math.abs(a - b);
+      if (consumption < 20 || consumption >= 2000) continue;
+
+      const aIndex = tokens.find((token) => token.value === a)?.index ?? 0;
+      const bIndex = tokens.find((token) => token.value === b)?.index ?? 0;
+
+      if (Math.abs(aIndex - bIndex) > 1200) continue;
+
+      if (consumptions.some((value) => value === consumption)) {
+        return {
+          previous: String(Math.min(a, b)),
+          current: String(Math.max(a, b)),
+          kwh: String(consumption),
+        };
+      }
+    }
+  }
+
+  return null;
 }
 
 function extractStructuredPdfData(
@@ -790,6 +818,8 @@ export default function Home() {
       });
 
       const variants = [
+        { name: "foto original · página completa", mode: "original" as const, psm: PSM.AUTO },
+        { name: "foto original · bloque", mode: "original" as const, psm: PSM.SINGLE_BLOCK },
         { name: "imagen mejorada · página completa", mode: "gray" as const, psm: PSM.AUTO },
         { name: "imagen mejorada · bloque", mode: "gray" as const, psm: PSM.SINGLE_BLOCK },
         { name: "imagen mejorada · texto disperso", mode: "gray" as const, psm: PSM.SPARSE_TEXT },
