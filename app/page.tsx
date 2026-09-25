@@ -212,7 +212,7 @@ function extractStructuredPdfData(text: string): Partial<FormState> {
   // disponibles, lectura actual - lectura anterior es la fuente más fiable
   // para el consumo total del período.
   const readingCandidates = Array.from(
-    clean.matchAll(/\\b(\\d{4,6})\\s+(\\d{4,6})\\s+(\\d{2,4})\\b/g)
+    clean.matchAll(/\b(\d{4,6})\s+(\d{4,6})\s+(\d{2,4})\b/g)
   )
     .map((match) => ({
       current: Number(match[1]),
@@ -249,7 +249,7 @@ function extractStructuredPdfData(text: string): Partial<FormState> {
     )?.[0] ?? liquidation;
 
     const candidates = Array.from(
-      consumptionSection.matchAll(/(?:^|\\s)(\\d{2,4}(?:[.,]\\d{1,2})?)(?=\\s+(?:9\\d{2}\\.\\d{4}|\\d{5,6}))/g)
+      consumptionSection.matchAll(/(?:^|\s)(\d{2,4}(?:[.,]\d{1,2})?)(?=\s+(?:9\d{2}\.\d{4}|\d{5,6}))/g)
     )
       .map((match) => parseNumber(match[1]))
       .filter((value): value is number =>
