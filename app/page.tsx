@@ -156,25 +156,118 @@ function normalizeInvoiceFieldText(text: string) {
     .trim();
 }
 
-function extractStructuredPdfData(text: string): Partial<FormState> {
+type PdfTextItem = {
+  text: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+function normalizeLoose(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/[ \t]+/g, " ")
+    .trim();
+}
+
+function nearbyPdfText(
+  items: PdfTextItem[],
+  labelPattern: RegExp,
+  maxYDistance = 28,
+  maxXDistance = 420
+) {
+  const label = items.find((item) => labelPattern.test(normalizeLoose(item.text)));
+  if (!label) return "";
+
+  return items
+    .filter((item) => {
+      const yDistance = Math.abs(item.y - label.y);
+      const xDistance = item.x - (label.x + label.width);
+      return (
+        item !== label &&
+        yDistance <= maxYDistance &&
+        xDistance >= -8 &&
+        xDistance <= maxXDistance
+      );
+    })
+    .sort((a, b) => {
+      const yDiff = Math.abs(a.y - label.y) - Math.abs(b.y - label.y);
+      return yDiff !== 0 ? yDiff : a.x - b.x;
+    })
+    .map((item) => item.text)
+    .join(" ");
+}
+
+function extractReadingFromText(text: string) {
+  const triples = Array.from(
+    text.matchAll(/\b(\d{4,6})\s+(\d{4,6})\s+(\d{2,4})\b/g)
+  )
+    .map((match) => [Number(match[1]), Number(match[2]), Number(match[3])])
+    .filter(([a, b, consumption]) => {
+      const difference = Math.abs(a - b);
+      return difference === consumption && consumption >= 20 && consumption < 2000;
+    });
+
+  if (!triples.length) return null;
+
+  const [a, b, consumption] = triples[0];
+  return {
+    previous: String(Math.min(a, b)),
+    current: String(Math.max(a, b)),
+    kwh: String(consumption),
+  };
+}
+
+function extractStructuredPdfData(
+  text: string,
+  items: PdfTextItem[] = []
+): Partial<FormState> {
   const clean = normalizeInvoiceFieldText(text);
   const result: Partial<FormState> = {};
 
   const municipality =
-    clean.match(/municipio\s*:\s*\d*\s*([A-Za-z ]{3,30}?)(?=\s+-\s+servicio|\s+servicio\s*:|\s+ciclo\s*:|$)/i) ||
-    clean.match(/municipio\s*:?\s*\d*\s*(Cartago|[A-Za-z]{3,30})/i);
+    clean.match(
+      /municipio\s*[:\-]?\s*(?:\d{1,4}\s+)?([A-Za-zÁÉÍÓÚáéíóúÑñ]{3,30})(?=\s*[-:]?\s*servicio|\s+ciclo|$)/i
+    ) ||
+    clean.match(
+      /municipio\s*[:\-]?\s*(?:\d{1,4}\s+)?([A-Za-zÁÉÍÓÚáéíóúÑñ]{3,30})/i
+    );
 
-  if (municipality) result.municipality = municipality[1].trim();
+  if (municipality) {
+    result.municipality = municipality[1].trim();
+  } else if (items.length) {
+    const nearby = nearbyPdfText(items, /^municipio$/);
+    const match = nearby.match(/(?:\d{1,4}\s+)?([A-Za-zÁÉÍÓÚáéíóúÑñ]{3,30})/i);
+    if (match) result.municipality = match[1].trim();
+  }
 
-  const estrato = clean.match(/estrato\s*:\s*([1-6])\b/i);
-  if (estrato) result.estrato = estrato[1];
+  const estrato =
+    clean.match(/(?:estrato|est)\s*[:.]?\s*0?([1-6])\b/i) ||
+    clean.match(/(?:estrato|est)\s+0?([1-6])\b/i);
 
-  const days = clean.match(/d[ií]as\s+facturados\s*:?\s*(\d{1,3})\b/i);
-  if (days) result.days = days[1];
+  if (estrato) {
+    result.estrato = estrato[1];
+  } else if (items.length) {
+    const nearby = nearbyPdfText(items, /^(?:estrato|est)$/);
+    const match = nearby.match(/\b0?([1-6])\b/);
+    if (match) result.estrato = match[1];
+  }
 
-  const periodRange = clean.match(
-    /periodo\s+facturado\s*:?\s*(\d{1,2})\s*\/\s*([A-Za-z]{3,10})\s*\/\s*(\d{4})\s*-\s*(\d{1,2})\s*\/\s*([A-Za-z]{3,10})\s*\/\s*(\d{4})/i
-  );
+  const days =
+    clean.match(/d[ií]as\s+facturados\s*[:.]?\s*(\d{1,3})\b/i) ||
+    clean.match(/d[ií]as\s+facturados[\s\S]{0,40}?(\d{1,3})\b/i);
+
+  if (days) {
+    result.days = days[1];
+  } else if (items.length) {
+    const nearby = nearbyPdfText(items, /^d[ií]as\s+facturados$/);
+    const match = nearby.match(/\b(\d{1,3})\b/);
+    if (match) result.days = match[1];
+  }
 
   const monthMap: Record<string, string> = {
     ene: "01", enero: "01",
@@ -191,76 +284,63 @@ function extractStructuredPdfData(text: string): Partial<FormState> {
     dic: "12", diciembre: "12",
   };
 
+  const periodRange =
+    clean.match(
+      /periodo(?:\s+facturado)?\s*[:.]?\s*(\d{1,2})\s*[/\-]\s*([A-Za-z]{3,10})\s*[/\-]\s*(\d{4})\s*[-–]\s*(\d{1,2})\s*[/\-]\s*([A-Za-z]{3,10})\s*[/\-]\s*(\d{4})/i
+    ) ||
+    clean.match(
+      /periodo(?:\s+facturado)?[\s\S]{0,80}?(\d{1,2})\s*[/\-]\s*([A-Za-z]{3,10})\s*[/\-]\s*(\d{4})/i
+    );
+
   if (periodRange) {
     const month = monthMap[periodRange[2].toLowerCase()];
-    if (month) result.period = `${periodRange[3]}-${month}`;
+    const year = periodRange[3];
+    if (month && year) result.period = year + "-" + month;
   } else {
-    const periodMonth = clean.match(/tarifa\s+a\s+mes\s+de\s*:?\s*([A-Za-z]{3,10})[-/]?(\d{4})/i);
-    if (periodMonth) {
-      const month = monthMap[periodMonth[1].toLowerCase()];
-      if (month) result.period = `${periodMonth[2]}-${month}`;
+    const numericPeriod = clean.match(
+      /periodo(?:\s+facturado)?[\s:]*(\d{4})\s*[-/]\s*(\d{1,2})/i
+    );
+
+    if (numericPeriod) {
+      result.period = numericPeriod[1] + "-" + numericPeriod[2].padStart(2, "0");
+    } else if (items.length) {
+      const nearby = nearbyPdfText(items, /^periodo$/i, 42, 500);
+      const date = nearby.match(
+        /(\d{1,2})\s*[/\-]\s*([A-Za-z]{3,10})\s*[/\-]\s*(\d{4})/i
+      );
+
+      if (date) {
+        const month = monthMap[date[2].toLowerCase()];
+        if (month) result.period = date[3] + "-" + month;
+      }
     }
   }
 
-  // IMPORTANTE: la tabla de liquidación puede dividir el consumo en
-  // varios rangos tarifarios. Por ejemplo, una factura puede mostrar:
-  //   0-173 → 173 kWh
-  //   >173  → 180 kWh
-  // El consumo real del período NO es 173 kWh, sino 173 + 180 = 353 kWh.
-  //
-  // La factura también suele contener las lecturas del medidor. Cuando están
-  // disponibles, lectura actual - lectura anterior es la fuente más fiable
-  // para el consumo total del período.
-  const readingCandidates = Array.from(
-    clean.matchAll(/\b(\d{4,6})\s+(\d{4,6})\s+(\d{2,4})\b/g)
-  )
-    .map((match) => ({
-      current: Number(match[1]),
-      previous: Number(match[2]),
-      consumption: Number(match[3]),
-    }))
-    .filter(
-      (item) =>
-        item.current > item.previous &&
-        item.current - item.previous === item.consumption &&
-        item.consumption > 0 &&
-        item.consumption < 2000
-    );
+  const reading = extractReadingFromText(clean);
+  if (reading) Object.assign(result, reading);
 
-  if (readingCandidates.length) {
-    const reading = readingCandidates[0];
-    result.previous = String(reading.previous);
-    result.current = String(reading.current);
-    result.kwh = String(reading.consumption);
-  }
-
-  // Fallback: si las lecturas no pudieron recuperarse, intentamos sumar
-  // los consumos de las filas de "LIQUIDACIÓN DEL CONSUMO ACTUAL".
-  // Rechazamos valores pequeños como "10", porque en esta estructura pueden
-  // aparecer por una separación incorrecta de los elementos del PDF.
   if (!result.kwh) {
     const liquidationIndex = clean.search(/liquidaci[oó]n\s+del\s+consumo\s+actual/i);
     const liquidation = liquidationIndex >= 0
-      ? clean.slice(liquidationIndex, liquidationIndex + 1800)
+      ? clean.slice(liquidationIndex, liquidationIndex + 2200)
       : clean;
 
-    const consumptionSection = liquidation.match(
-      /rango\s+consumo\s+kwh[\s\S]{0,1200}/i
-    )?.[0] ?? liquidation;
-
     const candidates = Array.from(
-      consumptionSection.matchAll(/(?:^|\s)(\d{2,4}(?:[.,]\d{1,2})?)(?=\s+(?:9\d{2}\.\d{4}|\d{5,6}))/g)
+      liquidation.matchAll(/(?:^|\s)(\d{2,4}(?:[.,]\d{1,2})?)(?=\s+(?:9\d{2}\.\d{4}|\d{5,6}))/g)
     )
       .map((match) => parseNumber(match[1]))
       .filter((value): value is number =>
         value !== null && value >= 20 && value < 2000
       );
 
-    if (candidates.length) {
-      // Evitamos duplicados producidos por la reconstrucción del texto.
+    const unique = [...new Set(candidates)];
+
+    if (unique.length >= 2) {
       result.kwh = String(
-        Number(candidates.reduce((sum, value) => sum + value, 0).toFixed(2))
+        Number(unique.slice(0, 2).reduce((sum, value) => sum + value, 0).toFixed(2))
       );
+    } else if (unique.length === 1) {
+      result.kwh = String(unique[0]);
     }
   }
 
@@ -270,9 +350,6 @@ function extractStructuredPdfData(text: string): Partial<FormState> {
 async function extractInvoicePdf(file: File) {
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
 
-  // PDF.js 6.x ya no expone "disableWorker" en DocumentInitParameters.
-  // Configuramos explícitamente el worker para que la lectura del PDF
-  // funcione también en producción con Next.js/Vercel.
   pdfjs.GlobalWorkerOptions.workerSrc = new URL(
     "pdfjs-dist/legacy/build/pdf.worker.mjs",
     import.meta.url
@@ -284,6 +361,7 @@ async function extractInvoicePdf(file: File) {
   }).promise;
 
   const pages: string[] = [];
+  const allItems: PdfTextItem[] = [];
 
   for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
     const page = await pdf.getPage(pageNumber);
@@ -292,27 +370,34 @@ async function extractInvoicePdf(file: File) {
     const items = (content.items as Array<{
       str?: string;
       transform?: number[];
+      width?: number;
+      height?: number;
     }>)
-      .filter((item) => item.str)
+      .filter((item) => item.str?.trim())
       .map((item) => ({
         text: item.str ?? "",
         x: item.transform?.[4] ?? 0,
         y: item.transform?.[5] ?? 0,
-      }))
-      .sort((a, b) => {
-        const yDiff = Math.abs(b.y - a.y);
-        return yDiff > 3 ? b.y - a.y : a.x - b.x;
-      });
+        width: item.width ?? 0,
+        height: item.height ?? Math.abs(item.transform?.[3] ?? 0),
+      }));
+
+    allItems.push(...items);
+
+    const ordered = [...items].sort((a, b) => {
+      const yDiff = Math.abs(b.y - a.y);
+      return yDiff > 3 ? b.y - a.y : a.x - b.x;
+    });
 
     const lines: Array<{ y: number; text: string }> = [];
 
-    for (const item of items) {
+    for (const item of ordered) {
       const previous = lines[lines.length - 1];
 
       if (!previous || Math.abs(previous.y - item.y) > 3) {
         lines.push({ y: item.y, text: item.text });
       } else {
-        previous.text += ` ${item.text}`;
+        previous.text += " " + item.text;
       }
     }
 
@@ -322,6 +407,7 @@ async function extractInvoicePdf(file: File) {
 
   return {
     text: pages.join("\n\n"),
+    items: allItems,
     pages: pdf.numPages,
   };
 }
@@ -639,7 +725,7 @@ export default function Home() {
 
     try {
       const extractedPdf = await extractInvoicePdf(file);
-      const extracted = extractStructuredPdfData(extractedPdf.text);
+      const extracted = extractStructuredPdfData(extractedPdf.text, extractedPdf.items);
 
       setOcrText(extractedPdf.text);
       setOcrFields(extracted);
