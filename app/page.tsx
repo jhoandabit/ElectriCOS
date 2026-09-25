@@ -39,8 +39,11 @@ function preprocessInvoiceImage(file: File, mode: "gray" | "binary") {
     image.onload = () => {
       URL.revokeObjectURL(objectUrl);
 
-      const maxWidth = 2600;
-      const scale = Math.min(1.35, maxWidth / image.naturalWidth);
+      // Tesseract funciona mejor cuando el texto llega con suficiente
+      // resolución. En fotos de factura el documento puede ocupar solo una
+      // parte de la imagen, por eso permitimos una ampliación mayor.
+      const maxWidth = 3200;
+      const scale = Math.min(1.8, maxWidth / image.naturalWidth);
       const width = Math.max(1200, Math.round(image.naturalWidth * scale));
       const height = Math.round(image.naturalHeight * (width / image.naturalWidth));
 
@@ -788,6 +791,7 @@ export default function Home() {
 
       const variants = [
         { name: "imagen mejorada · página completa", mode: "gray" as const, psm: PSM.AUTO },
+        { name: "imagen mejorada · bloque", mode: "gray" as const, psm: PSM.SINGLE_BLOCK },
         { name: "imagen mejorada · texto disperso", mode: "gray" as const, psm: PSM.SPARSE_TEXT },
         { name: "alto contraste · texto disperso", mode: "binary" as const, psm: PSM.SPARSE_TEXT },
       ];
@@ -825,12 +829,23 @@ export default function Home() {
             ? extractKwhFromTsv(result.data.tsv)
             : null;
 
-          if (spatialKwh) {
+          // Nunca sustituimos un consumo validado por lecturas con un número
+          // obtenido únicamente por posición. La posición se usa como
+          // respaldo, no como fuente principal.
+          if (!extracted.kwh && spatialKwh) {
             extracted.kwh = spatialKwh;
           }
 
+          const hasValidatedReading =
+            Boolean(extracted.previous && extracted.current && extracted.kwh) &&
+            Number(extracted.current) - Number(extracted.previous) === Number(extracted.kwh);
+
           const fieldCount = Object.keys(extracted).length;
-          const score = scoreOcrText(text, confidence) + fieldCount * 25 + (spatialKwh ? 160 : 0);
+          const score =
+            scoreOcrText(text, confidence) +
+            fieldCount * 25 +
+            (hasValidatedReading ? 220 : 0) +
+            (spatialKwh && Number(spatialKwh) >= 20 ? 60 : 0);
 
           results.push({
             text,
