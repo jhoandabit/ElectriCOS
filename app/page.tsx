@@ -145,6 +145,131 @@ function scoreOcrText(text: string, confidence: number) {
   return score;
 }
 
+function normalizeInvoiceFieldText(text: string) {
+  return text
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[|]/g, " ")
+    .replace(/[—–]/g, "-")
+    .replace(/[\u00a0]/g, " ")
+    .replace(/[ \t]+/g, " ")
+    .trim();
+}
+
+function extractStructuredPdfData(text: string): Partial<FormState> {
+  const clean = normalizeInvoiceFieldText(text);
+  const result: Partial<FormState> = {};
+
+  const municipality =
+    clean.match(/municipio\s*:\s*\d*\s*([A-Za-z ]{3,30}?)(?=\s+-\s+servicio|\s+servicio\s*:|\s+ciclo\s*:|$)/i) ||
+    clean.match(/municipio\s*:?\s*\d*\s*(Cartago|[A-Za-z]{3,30})/i);
+
+  if (municipality) result.municipality = municipality[1].trim();
+
+  const estrato = clean.match(/estrato\s*:\s*([1-6])\b/i);
+  if (estrato) result.estrato = estrato[1];
+
+  const days = clean.match(/d[ií]as\s+facturados\s*:?\s*(\d{1,3})\b/i);
+  if (days) result.days = days[1];
+
+  const periodRange = clean.match(
+    /periodo\s+facturado\s*:?\s*(\d{1,2})\s*\/\s*([A-Za-z]{3,10})\s*\/\s*(\d{4})\s*-\s*(\d{1,2})\s*\/\s*([A-Za-z]{3,10})\s*\/\s*(\d{4})/i
+  );
+
+  const monthMap: Record<string, string> = {
+    ene: "01", enero: "01",
+    feb: "02", febrero: "02",
+    mar: "03", marzo: "03",
+    abr: "04", abril: "04",
+    may: "05", mayo: "05",
+    jun: "06", junio: "06",
+    jul: "07", julio: "07",
+    ago: "08", agosto: "08",
+    sep: "09", septiembre: "09",
+    oct: "10", octubre: "10",
+    nov: "11", noviembre: "11",
+    dic: "12", diciembre: "12",
+  };
+
+  if (periodRange) {
+    const month = monthMap[periodRange[2].toLowerCase()];
+    if (month) result.period = `${periodRange[3]}-${month}`;
+  } else {
+    const periodMonth = clean.match(/tarifa\s+a\s+mes\s+de\s*:?\s*([A-Za-z]{3,10})[-/]?(\d{4})/i);
+    if (periodMonth) {
+      const month = monthMap[periodMonth[1].toLowerCase()];
+      if (month) result.period = `${periodMonth[2]}-${month}`;
+    }
+  }
+
+  // En esta factura digital el texto de la tabla conserva el orden:
+  // Rango → Consumo kWh → Valor kWh → Total energía → Subsidio → Total.
+  // Por eso podemos tomar el número inmediatamente después de "Consumo kWh".
+  const consumption = clean.match(
+    /consumo\s+kwh\s+(\d{1,4}(?:[.,]\d{1,3})?)/i
+  );
+
+  if (consumption) {
+    const value = parseNumber(consumption[1]);
+    if (value !== null && value > 0 && value < 2000) {
+      result.kwh = String(value);
+    }
+  }
+
+  return result;
+}
+
+async function extractInvoicePdf(file: File) {
+  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  const buffer = await file.arrayBuffer();
+  const pdf = await pdfjs.getDocument({
+    data: new Uint8Array(buffer),
+    disableWorker: true,
+  }).promise;
+
+  const pages: string[] = [];
+
+  for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+    const page = await pdf.getPage(pageNumber);
+    const content = await page.getTextContent();
+
+    const items = (content.items as Array<{
+      str?: string;
+      transform?: number[];
+    }>)
+      .filter((item) => item.str)
+      .map((item) => ({
+        text: item.str ?? "",
+        x: item.transform?.[4] ?? 0,
+        y: item.transform?.[5] ?? 0,
+      }))
+      .sort((a, b) => {
+        const yDiff = Math.abs(b.y - a.y);
+        return yDiff > 3 ? b.y - a.y : a.x - b.x;
+      });
+
+    const lines: Array<{ y: number; text: string }> = [];
+
+    for (const item of items) {
+      const previous = lines[lines.length - 1];
+
+      if (!previous || Math.abs(previous.y - item.y) > 3) {
+        lines.push({ y: item.y, text: item.text });
+      } else {
+        previous.text += ` ${item.text}`;
+      }
+    }
+
+    pages.push(lines.map((line) => line.text.trim()).filter(Boolean).join("\n"));
+    page.cleanup();
+  }
+
+  return {
+    text: pages.join("\n\n"),
+    pages: pdf.numPages,
+  };
+}
+
 function normalizeOcrText(text: string) {
   return text
     .replace(/\r/g, " ")
@@ -372,6 +497,7 @@ export default function Home() {
   const [error, setError] = useState("");
   const [invoiceFile, setInvoiceFile] = useState<File | null>(null);
   const [invoicePreview, setInvoicePreview] = useState("");
+  const [invoiceIsPdf, setInvoiceIsPdf] = useState(false);
   const [ocrText, setOcrText] = useState("");
   const [ocrStatus, setOcrStatus] = useState("");
   const [ocrRunning, setOcrRunning] = useState(false);
@@ -421,18 +547,59 @@ export default function Home() {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    if (!file.type.startsWith("image/")) {
-      setError("Selecciona una imagen de la factura. El procesamiento PDF se incorporará después.");
+    const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+    const isImage = file.type.startsWith("image/");
+
+    if (!isPdf && !isImage) {
+      setError("Selecciona una factura en imagen o PDF.");
       return;
     }
 
     setInvoiceFile(file);
-    setInvoicePreview(URL.createObjectURL(file));
+    setInvoiceIsPdf(isPdf);
+    setInvoicePreview(isPdf ? "" : URL.createObjectURL(file));
     setOcrText("");
     setOcrFields({});
-    setOcrStatus("Factura seleccionada. Iniciando lectura automática…");
+    setOcrStatus(
+      isPdf
+        ? "Factura PDF seleccionada. Extrayendo datos directamente del documento…"
+        : "Factura seleccionada. Iniciando lectura automática…"
+    );
     setError("");
-    void runOcr(file);
+
+    if (isPdf) {
+      void runPdfExtraction(file);
+    } else {
+      void runOcr(file);
+    }
+  };
+
+  const runPdfExtraction = async (file: File) => {
+    setOcrRunning(true);
+    setError("");
+    setOcrText("");
+    setOcrFields({});
+    setOcrStatus("Extrayendo texto y estructura del PDF…");
+
+    try {
+      const extractedPdf = await extractInvoicePdf(file);
+      const extracted = extractStructuredPdfData(extractedPdf.text);
+
+      setOcrText(extractedPdf.text);
+      setOcrFields(extracted);
+      setForm((current) => ({ ...current, ...extracted }));
+
+      if (!extracted.kwh) {
+        setOcrStatus("PDF leído, pero no se identificó automáticamente el consumo. Revisa los datos.");
+      } else {
+        setOcrStatus(`Factura PDF leída correctamente · ${extractedPdf.pages} página`);
+      }
+    } catch {
+      setError("No fue posible leer el PDF. Si es una factura escaneada, puedes usar una fotografía.");
+      setOcrStatus("");
+    } finally {
+      setOcrRunning(false);
+    }
   };
 
   const runOcr = async (sourceFile?: File) => {
@@ -582,18 +749,28 @@ export default function Home() {
             <label className="camera-dropzone">
               <input
                 type="file"
-                accept="image/*"
+                accept="image/*,.pdf,application/pdf"
                 capture="environment"
                 onChange={handleInvoiceFile}
               />
               <span className="camera-icon">📷</span>
-              <strong>Tomar foto o elegir una imagen</strong>
-              <small>Usa una foto completa, bien iluminada y enfocada.</small>
+              <strong>Tomar foto o seleccionar factura</strong>
+              <small>Foto o PDF. Si el PDF contiene texto digital, ElectriCOs lo leerá directamente.</small>
             </label>
 
-            {invoicePreview && (
+            {invoicePreview && !invoiceIsPdf && (
               <div className="invoice-preview">
                 <img src={invoicePreview} alt="Vista previa de la factura seleccionada" />
+              </div>
+            )}
+
+            {invoiceFile && invoiceIsPdf && (
+              <div className="pdf-selected-card">
+                <span className="pdf-icon">PDF</span>
+                <div>
+                  <strong>{invoiceFile.name}</strong>
+                  <small>Factura digital · lectura directa del documento</small>
+                </div>
               </div>
             )}
 
