@@ -448,13 +448,12 @@ function extractKwhFromTsv(tsv: string) {
   };
 
   const words: OcrWord[] = [];
-  const lines = tsv.split(/\r?\n/);
 
-  for (const line of lines.slice(1)) {
-    const parts = line.split("\t");
+  for (const line of tsv.split(/\\r?\\n/).slice(1)) {
+    const parts = line.split("\\t");
     if (parts.length < 12) continue;
 
-    const text = parts.slice(11).join("\t").trim();
+    const text = parts.slice(11).join("\\t").trim();
     const left = Number(parts[6]);
     const top = Number(parts[7]);
     const width = Number(parts[8]);
@@ -464,7 +463,7 @@ function extractKwhFromTsv(tsv: string) {
     if (!text || !Number.isFinite(left) || !Number.isFinite(top)) continue;
 
     words.push({
-      lineKey: `${parts[1]}-${parts[2]}-${parts[3]}-${parts[4]}`,
+      lineKey: parts.slice(1, 5).join("-"),
       left,
       top,
       width,
@@ -477,32 +476,30 @@ function extractKwhFromTsv(tsv: string) {
   const normalize = (value: string) =>
     value
       .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[\\u0300-\\u036f]/g, "")
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, " ")
       .trim();
 
   const grouped = new Map<string, OcrWord[]>();
+
   for (const word of words) {
     const list = grouped.get(word.lineKey) ?? [];
     list.push(word);
     grouped.set(word.lineKey, list);
   }
 
-  // Buscamos específicamente el encabezado "Consumo kWh".
-  // Después buscamos el primer número debajo de esa columna.
-  // Esto evita confundir 156,574 (total energía) o $349,864 (total factura)
-  // con el consumo de 173 kWh.
   for (const lineWords of grouped.values()) {
     lineWords.sort((a, b) => a.left - b.left);
-    const lineText = normalize(lineWords.map((word) => word.text).join(" "));
 
+    const lineText = normalize(lineWords.map((word) => word.text).join(" "));
     if (!lineText.includes("consumo") || !lineText.includes("kwh")) continue;
 
-    const consumoWords = lineWords.filter((word) => normalize(word.text).includes("consumo"));
-    const kwhWords = lineWords.filter((word) => normalize(word.text) === "kwh");
+    const anchorWords = lineWords.filter((word) => {
+      const value = normalize(word.text);
+      return value.includes("consumo") || value === "kwh";
+    });
 
-    const anchorWords = [...consumoWords, ...kwhWords];
     if (!anchorWords.length) continue;
 
     const left = Math.min(...anchorWords.map((word) => word.left));
@@ -511,10 +508,10 @@ function extractKwhFromTsv(tsv: string) {
     const headerBottom = Math.max(...anchorWords.map((word) => word.top + word.height));
 
     const candidates = words
-      .filter((word) => word.top > headerBottom + 2 && word.top < headerBottom + 150)
+      .filter((word) => word.top > headerBottom + 2 && word.top < headerBottom + 180)
       .filter((word) => {
         const center = word.left + word.width / 2;
-        return Math.abs(center - centerX) <= 75;
+        return Math.abs(center - centerX) <= 80;
       })
       .map((word) => ({
         ...word,
@@ -522,14 +519,30 @@ function extractKwhFromTsv(tsv: string) {
       }))
       .filter((word) =>
         word.value !== null &&
-        word.value > 0 &&
+        word.value >= 20 &&
         word.value < 2000 &&
         word.confidence >= 20
       )
       .sort((a, b) => a.top - b.top);
 
-    if (candidates.length) {
-      return String(candidates[0].value);
+    const unique = [
+      ...new Set(
+        candidates
+          .map((candidate) => candidate.value)
+          .filter((value): value is number => value !== null)
+      ),
+    ];
+
+    if (unique.length >= 2) {
+      // La columna puede contener 173 y 180 para un mismo período.
+      // El consumo total es la suma de las franjas, no el primer valor.
+      return String(
+        Number(unique.slice(0, 2).reduce((sum, value) => sum + value, 0).toFixed(2))
+      );
+    }
+
+    if (unique.length === 1) {
+      return String(unique[0]);
     }
   }
 
