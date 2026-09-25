@@ -202,17 +202,65 @@ function extractStructuredPdfData(text: string): Partial<FormState> {
     }
   }
 
-  // En esta factura digital el texto de la tabla conserva el orden:
-  // Rango → Consumo kWh → Valor kWh → Total energía → Subsidio → Total.
-  // Por eso podemos tomar el número inmediatamente después de "Consumo kWh".
-  const consumption = clean.match(
-    /consumo\s+kwh\s+(\d{1,4}(?:[.,]\d{1,3})?)/i
-  );
+  // IMPORTANTE: la tabla de liquidación puede dividir el consumo en
+  // varios rangos tarifarios. Por ejemplo, una factura puede mostrar:
+  //   0-173 → 173 kWh
+  //   >173  → 180 kWh
+  // El consumo real del período NO es 173 kWh, sino 173 + 180 = 353 kWh.
+  //
+  // La factura también suele contener las lecturas del medidor. Cuando están
+  // disponibles, lectura actual - lectura anterior es la fuente más fiable
+  // para el consumo total del período.
+  const readingCandidates = Array.from(
+    clean.matchAll(/\\b(\\d{4,6})\\s+(\\d{4,6})\\s+(\\d{2,4})\\b/g)
+  )
+    .map((match) => ({
+      current: Number(match[1]),
+      previous: Number(match[2]),
+      consumption: Number(match[3]),
+    }))
+    .filter(
+      (item) =>
+        item.current > item.previous &&
+        item.current - item.previous === item.consumption &&
+        item.consumption > 0 &&
+        item.consumption < 2000
+    );
 
-  if (consumption) {
-    const value = parseNumber(consumption[1]);
-    if (value !== null && value > 0 && value < 2000) {
-      result.kwh = String(value);
+  if (readingCandidates.length) {
+    const reading = readingCandidates[0];
+    result.previous = String(reading.previous);
+    result.current = String(reading.current);
+    result.kwh = String(reading.consumption);
+  }
+
+  // Fallback: si las lecturas no pudieron recuperarse, intentamos sumar
+  // los consumos de las filas de "LIQUIDACIÓN DEL CONSUMO ACTUAL".
+  // Rechazamos valores pequeños como "10", porque en esta estructura pueden
+  // aparecer por una separación incorrecta de los elementos del PDF.
+  if (!result.kwh) {
+    const liquidationIndex = clean.search(/liquidaci[oó]n\\s+del\\s+consumo\\s+actual/i);
+    const liquidation = liquidationIndex >= 0
+      ? clean.slice(liquidationIndex, liquidationIndex + 1800)
+      : clean;
+
+    const consumptionSection = liquidation.match(
+      /rango\\s+consumo\\s+kwh[\\s\\S]{0,1200}/i
+    )?.[0] ?? liquidation;
+
+    const candidates = Array.from(
+      consumptionSection.matchAll(/(?:^|\\s)(\\d{2,4}(?:[.,]\\d{1,2})?)(?=\\s+(?:9\\d{2}\\.\\d{4}|\\d{5,6}))/g)
+    )
+      .map((match) => parseNumber(match[1]))
+      .filter((value): value is number =>
+        value !== null && value >= 20 && value < 2000
+      );
+
+    if (candidates.length) {
+      // Evitamos duplicados producidos por la reconstrucción del texto.
+      result.kwh = String(
+        Number(candidates.reduce((sum, value) => sum + value, 0).toFixed(2))
+      );
     }
   }
 
