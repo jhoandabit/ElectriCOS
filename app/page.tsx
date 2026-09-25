@@ -145,40 +145,44 @@ function scoreOcrText(text: string, confidence: number) {
   return score;
 }
 
+function normalizeOcrText(text: string) {
+  return text
+    .replace(/\r/g, " ")
+    .replace(/[|]/g, " ")
+    .replace(/[—–]/g, "-")
+    .replace(/[\u00a0]/g, " ")
+    .replace(/[ \t]+/g, " ")
+    .trim();
+}
+
+function numberCandidates(text: string) {
+  const matches = text.match(/\b\d{1,4}(?:[.,]\d{1,3})?\b/g) ?? [];
+  return matches
+    .map((raw) => ({
+      raw,
+      value: parseNumber(raw),
+    }))
+    .filter((item): item is { raw: string; value: number } =>
+      item.value !== null
+    );
+}
+
 function extractInvoiceData(text: string): Partial<FormState> {
-  const clean = text.replace(/\r/g, " ").replace(/[|]/g, " ");
+  const clean = normalizeOcrText(text);
   const result: Partial<FormState> = {};
 
-  const kwhPatterns = [
-    /(?:consumo|energ[ií]a|kwh)[^\d]{0,35}(\d{1,4}(?:[.,]\d{1,2})?)\s*(?:kwh)?/i,
-    /(\d{1,4}(?:[.,]\d{1,2})?)\s*kwh\b/i,
-  ];
-
-  for (const pattern of kwhPatterns) {
-    const match = clean.match(pattern);
-    if (match) {
-      const value = parseNumber(match[1]);
-      if (value && value > 0 && value < 10000) {
-        result.kwh = String(value);
-        break;
-      }
-    }
-  }
-
-  const previous = clean.match(/(?:lectura\s+anterior|anterior)[^\d]{0,25}(\d{3,8})/i);
-  const current = clean.match(/(?:lectura\s+actual|actual)[^\d]{0,25}(\d{3,8})/i);
-  if (previous) result.previous = previous[1];
-  if (current) result.current = current[1];
-
-  const days = clean.match(/(?:d[ií]as|dias)\s*(?:facturados|facturados del periodo)?[^\d]{0,15}(\d{1,3})/i);
-  if (days) result.days = days[1];
-
-  const estrato = clean.match(/(?:estrato|clase)\s*(?:socioecon[oó]mico)?[^\d]{0,10}([1-6])/i);
+  // 1. Datos con etiquetas muy específicas.
+  const estrato = clean.match(/(?:estrato|clase)\s*(?:socioecon[oó]mico)?[^\d]{0,15}([1-6])\b/i);
   if (estrato) result.estrato = estrato[1];
 
+  const days = clean.match(
+    /(?:d[ií]as\s+facturados|dias\s+facturados|d[ií]as)\s*[:\-]?\s*(\d{1,3})\b/i
+  );
+  if (days) result.days = days[1];
+
   const period =
-    clean.match(/(?:periodo|per[ií]odo)[^\d]{0,20}(\d{1,2})[\/-](\d{4})/i) ||
-    clean.match(/(?:periodo|per[ií]odo)[^\d]{0,20}(\d{4})[\/-](\d{1,2})/i);
+    clean.match(/(?:periodo|per[ií]odo)\s*(?:facturado)?[^\d]{0,20}(\d{1,2})[\/-](\d{4})/i) ||
+    clean.match(/(?:periodo|per[ií]odo)\s*(?:facturado)?[^\d]{0,20}(\d{4})[\/-](\d{1,2})/i);
 
   if (period) {
     const first = Number(period[1]);
@@ -187,6 +191,72 @@ function extractInvoiceData(text: string): Partial<FormState> {
     const month = first > 12 ? second : first;
     if (year >= 2020 && month >= 1 && month <= 12) {
       result.period = `${year}-${String(month).padStart(2, "0")}`;
+    }
+  }
+
+  // 2. Lecturas: solo aceptamos números enteros largos junto a la etiqueta.
+  const previous = clean.match(
+    /(?:lectura\s+anterior|lectura\s*ant\.?)[^\d]{0,35}(\d{3,8})\b/i
+  );
+  const current = clean.match(
+    /(?:lectura\s+actual|lectura\s*act\.?)[^\d]{0,35}(\d{3,8})\b/i
+  );
+  if (previous) result.previous = previous[1];
+  if (current) result.current = current[1];
+
+  // 3. Municipio: preferimos la zona de datos técnicos y luego "municipio".
+  const municipality =
+    clean.match(/municipio\s*:\s*\d*\s*([A-Za-zÁÉÍÓÚáéíóúÑñ ]{3,40}?)(?=\s*-\s*servicio|\s+servicio\s*:|\s+ciclo\s*:|$)/i) ||
+    clean.match(/municipio\s*:\s*\d*\s*([A-Za-zÁÉÍÓÚáéíóúÑñ]{3,30})/i);
+
+  if (municipality) {
+    result.municipality = municipality[1].trim();
+  }
+
+  // 4. Consumo: NO tomamos el primer número cercano a "energía".
+  // En una factura aparecen muchos valores monetarios que también contienen
+  // "energía". Priorizamos exclusivamente la fila de "Consumo kWh" dentro
+  // de "LIQUIDACIÓN DEL CONSUMO ACTUAL".
+  const liquidationIndex = clean.search(/liquidaci[oó]n\s+del\s+consumo\s+actual/i);
+  const liquidation = liquidationIndex >= 0
+    ? clean.slice(liquidationIndex, liquidationIndex + 1800)
+    : clean;
+
+  const kwhLabelIndex = liquidation.search(/consumo\s*kwh/i);
+
+  if (kwhLabelIndex >= 0) {
+    const afterLabel = liquidation.slice(kwhLabelIndex + 10, kwhLabelIndex + 500);
+    const candidates = numberCandidates(afterLabel)
+      .filter(({ value }) => value > 0 && value < 2000)
+      .filter(({ raw }) => !/^\d{4}$/.test(raw));
+
+    // El valor monetario suele tener 3 grupos/dígitos y aparece después
+    // de "Valor kwh" o "Total energía"; evitamos esos campos.
+    const monetaryIndex = afterLabel.search(/valor\s+kwh|total\s+energ[ií]a|subsidio|total\b/i);
+    const beforeMoney = monetaryIndex >= 0 ? afterLabel.slice(0, monetaryIndex) : afterLabel;
+
+    const firstConsumption = numberCandidates(beforeMoney)
+      .filter(({ value }) => value > 0 && value < 2000)
+      .filter(({ raw }) => !/^\d{4}$/.test(raw))[0];
+
+    if (firstConsumption) {
+      result.kwh = String(firstConsumption.value);
+    } else if (candidates[0]) {
+      result.kwh = String(candidates[0].value);
+    }
+  }
+
+  // 5. Fallback muy restringido: solo cuando la factura dice explícitamente
+  // "consumo" y luego un valor seguido por kWh.
+  if (!result.kwh) {
+    const explicitKwh = clean.match(
+      /(?:consumo|consumo\s+actual)[^\d]{0,30}(\d{1,4}(?:[.,]\d{1,2})?)\s*kwh\b/i
+    );
+    if (explicitKwh) {
+      const value = parseNumber(explicitKwh[1]);
+      if (value !== null && value > 0 && value < 2000) {
+        result.kwh = String(value);
+      }
     }
   }
 
@@ -296,8 +366,9 @@ export default function Home() {
       });
 
       const variants = [
-        { name: "imagen mejorada", mode: "gray" as const },
-        { name: "imagen de alto contraste", mode: "binary" as const },
+        { name: "imagen mejorada · página completa", mode: "gray" as const, psm: PSM.AUTO },
+        { name: "imagen mejorada · texto disperso", mode: "gray" as const, psm: PSM.SPARSE_TEXT },
+        { name: "alto contraste · texto disperso", mode: "binary" as const, psm: PSM.SPARSE_TEXT },
       ];
 
       const results: Array<{ text: string; confidence: number; score: number; name: string }> = [];
@@ -306,16 +377,26 @@ export default function Home() {
         const variant = variants[index];
         setOcrStatus(`Leyendo factura (${index + 1} de ${variants.length})…`);
 
+        await worker.setParameters({
+          tessedit_pageseg_mode: variant.psm,
+          preserve_interword_spaces: "1",
+          user_defined_dpi: "300",
+        });
+
         const processed = await preprocessInvoiceImage(invoiceFile, variant.mode);
         const result = await worker.recognize(processed);
         const text = result.data.text?.trim() ?? "";
         const confidence = typeof result.data.confidence === "number" ? result.data.confidence : 0;
 
         if (text) {
+          const extracted = extractInvoiceData(text);
+          const fieldCount = Object.keys(extracted).length;
+          const score = scoreOcrText(text, confidence) + fieldCount * 25 + (extracted.kwh ? 80 : 0);
+
           results.push({
             text,
             confidence,
-            score: scoreOcrText(text, confidence),
+            score,
             name: variant.name,
           });
         }
