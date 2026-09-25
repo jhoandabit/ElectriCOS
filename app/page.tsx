@@ -375,6 +375,7 @@ export default function Home() {
   const [ocrText, setOcrText] = useState("");
   const [ocrStatus, setOcrStatus] = useState("");
   const [ocrRunning, setOcrRunning] = useState(false);
+  const [ocrFields, setOcrFields] = useState<Partial<FormState>>({});
 
   const set = (key: keyof FormState, value: string) => {
     setForm((f) => ({ ...f, [key]: value }));
@@ -428,12 +429,16 @@ export default function Home() {
     setInvoiceFile(file);
     setInvoicePreview(URL.createObjectURL(file));
     setOcrText("");
-    setOcrStatus("Factura lista. Pulsa “Leer factura”.");
+    setOcrFields({});
+    setOcrStatus("Factura seleccionada. Iniciando lectura automática…");
     setError("");
+    void runOcr(file);
   };
 
-  const runOcr = async () => {
-    if (!invoiceFile) {
+  const runOcr = async (sourceFile?: File) => {
+    const fileToProcess = sourceFile ?? invoiceFile;
+
+    if (!fileToProcess) {
       setError("Primero toma una foto o selecciona una imagen.");
       return;
     }
@@ -473,7 +478,13 @@ export default function Home() {
         { name: "alto contraste · texto disperso", mode: "binary" as const, psm: PSM.SPARSE_TEXT },
       ];
 
-      const results: Array<{ text: string; confidence: number; score: number; name: string }> = [];
+      const results: Array<{
+        text: string;
+        confidence: number;
+        score: number;
+        name: string;
+        extracted: Partial<FormState>;
+      }> = [];
 
       for (let index = 0; index < variants.length; index += 1) {
         const variant = variants[index];
@@ -485,7 +496,7 @@ export default function Home() {
           user_defined_dpi: "300",
         });
 
-        const processed = await preprocessInvoiceImage(invoiceFile, variant.mode);
+        const processed = await preprocessInvoiceImage(fileToProcess, variant.mode);
         const result = await worker.recognize(
           processed,
           {},
@@ -512,6 +523,7 @@ export default function Home() {
             confidence,
             score,
             name: variant.name,
+            extracted,
           });
         }
       }
@@ -525,9 +537,8 @@ export default function Home() {
       const best = results[0];
 
       setOcrText(best.text);
-
-      const extracted = extractInvoiceData(best.text);
-      setForm((current) => ({ ...current, ...extracted }));
+      setOcrFields(best.extracted);
+      setForm((current) => ({ ...current, ...best.extracted }));
 
       if (best.confidence < 55) {
         setOcrStatus("Lectura realizada con baja confianza. Revisa los datos antes de continuar.");
@@ -586,25 +597,77 @@ export default function Home() {
               </div>
             )}
 
-            {invoiceFile && (
-              <button className="primary-button" onClick={runOcr} disabled={ocrRunning}>
-                {ocrRunning ? "Leyendo factura…" : "Leer factura"}
-              </button>
+            {ocrRunning && (
+              <div className="ocr-status ocr-status-running">
+                <span className="ocr-spinner" aria-hidden="true" />
+                <span>{ocrStatus || "Analizando factura…"}</span>
+              </div>
             )}
 
-            {ocrStatus && <div className="ocr-status">{ocrStatus}</div>}
+            {!ocrRunning && ocrStatus && (
+              <div className="ocr-status">
+                <strong>{ocrStatus}</strong>
+                {ocrFields.kwh && <span>Consumo detectado: <b>{ocrFields.kwh} kWh</b></span>}
+              </div>
+            )}
+
+            {ocrText && (
+              <section className="detected-card" aria-label="Datos detectados">
+                <div className="detected-header">
+                  <div>
+                    <span className="section-kicker">LECTURA INTELIGENTE</span>
+                    <h3>Datos encontrados</h3>
+                  </div>
+                  <span className="detected-badge">Revisar</span>
+                </div>
+
+                <div className="detected-grid">
+                  <div className={"detected-field primary " + (ocrFields.kwh ? "detected-ok" : "detected-missing")}>
+                    <span>Consumo</span>
+                    <strong>{ocrFields.kwh ? `${ocrFields.kwh} kWh` : "No detectado"}</strong>
+                  </div>
+                  <div className={"detected-field " + (ocrFields.municipality ? "detected-ok" : "detected-missing")}>
+                    <span>Municipio</span>
+                    <strong>{ocrFields.municipality || "No detectado"}</strong>
+                  </div>
+                  <div className={"detected-field " + (ocrFields.estrato ? "detected-ok" : "detected-missing")}>
+                    <span>Estrato</span>
+                    <strong>{ocrFields.estrato || "No detectado"}</strong>
+                  </div>
+                  <div className={"detected-field " + (ocrFields.period ? "detected-ok" : "detected-missing")}>
+                    <span>Periodo</span>
+                    <strong>{ocrFields.period || "No detectado"}</strong>
+                  </div>
+                  <div className={"detected-field " + (ocrFields.days ? "detected-ok" : "detected-missing")}>
+                    <span>Días facturados</span>
+                    <strong>{ocrFields.days || "No detectado"}</strong>
+                  </div>
+                  <div className={"detected-field " + (ocrFields.previous && ocrFields.current ? "detected-ok" : "detected-missing")}>
+                    <span>Lecturas</span>
+                    <strong>
+                      {ocrFields.previous && ocrFields.current
+                        ? `${ocrFields.previous} → ${ocrFields.current}`
+                        : "No detectadas"}
+                    </strong>
+                  </div>
+                </div>
+
+                <div className="detected-note">
+                  <span>✓</span>
+                  <p>Los datos detectados se cargarán en el formulario para que puedas verificarlos y corregirlos.</p>
+                </div>
+
+                <button className="secondary-button full-button" onClick={continueWithExtractedData}>
+                  Revisar y completar datos
+                </button>
+              </section>
+            )}
 
             {ocrText && (
               <details className="ocr-details">
-                <summary>Ver texto reconocido</summary>
+                <summary>Ver texto técnico reconocido</summary>
                 <pre>{ocrText}</pre>
               </details>
-            )}
-
-            {ocrText && (
-              <button className="secondary-button full-button" onClick={continueWithExtractedData}>
-                Revisar y completar datos
-              </button>
             )}
           </section>
 
@@ -710,4 +773,145 @@ function Nav({ screen, onHome, onConsumption }: { screen: Screen; onHome: () => 
     <button className="nav-item" disabled><span>◎</span>Meta</button>
     <button className="nav-item" disabled><span>↗</span>Progreso</button>
   </nav>;
+}
+
+/* Resultado estructurado del OCR */
+.detected-card {
+  border: 1px solid #cfe1d4;
+  border-radius: 18px;
+  padding: 16px;
+  background: #fbfefc;
+  display: grid;
+  gap: 14px;
+}
+
+.detected-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.detected-header h3 {
+  margin: 4px 0 0;
+  font-size: 18px;
+}
+
+.detected-badge {
+  padding: 7px 10px;
+  border-radius: 999px;
+  background: #fff4d6;
+  color: #755a12;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.detected-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 9px;
+}
+
+.detected-field {
+  min-height: 68px;
+  padding: 11px 12px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: #fff;
+  display: grid;
+  align-content: center;
+  gap: 5px;
+}
+
+.detected-field span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.detected-field strong {
+  font-size: 15px;
+  line-height: 1.2;
+}
+
+.detected-field.primary {
+  grid-column: 1 / -1;
+  min-height: 82px;
+  background: var(--soft);
+}
+
+.detected-field.primary strong {
+  color: var(--dark);
+  font-size: 25px;
+  letter-spacing: -0.03em;
+}
+
+.detected-ok {
+  border-color: #cfe4d5;
+}
+
+.detected-missing {
+  border-color: #eadfb8;
+  background: #fffdf6;
+}
+
+.detected-missing strong {
+  color: #8a7430;
+  font-weight: 700;
+}
+
+.detected-note {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  padding: 11px 12px;
+  border-radius: 13px;
+  background: #f3f7f4;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.detected-note span {
+  color: var(--accent);
+  font-weight: 900;
+}
+
+.detected-note p {
+  margin: 0;
+}
+
+.ocr-status-running {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ocr-spinner {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 17px;
+  border: 2px solid #b9d1c0;
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: ocr-spin 0.8s linear infinite;
+}
+
+.ocr-status:not(.ocr-status-running) {
+  display: grid;
+  gap: 4px;
+}
+
+@keyframes ocr-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (max-width: 420px) {
+  .detected-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .detected-field.primary {
+    grid-column: auto;
+  }
 }
