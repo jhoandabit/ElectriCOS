@@ -239,13 +239,13 @@ function extractStructuredPdfData(text: string): Partial<FormState> {
   // Rechazamos valores pequeños como "10", porque en esta estructura pueden
   // aparecer por una separación incorrecta de los elementos del PDF.
   if (!result.kwh) {
-    const liquidationIndex = clean.search(/liquidaci[oó]n\\s+del\\s+consumo\\s+actual/i);
+    const liquidationIndex = clean.search(/liquidaci[oó]n\s+del\s+consumo\s+actual/i);
     const liquidation = liquidationIndex >= 0
       ? clean.slice(liquidationIndex, liquidationIndex + 1800)
       : clean;
 
     const consumptionSection = liquidation.match(
-      /rango\\s+consumo\\s+kwh[\\s\\S]{0,1200}/i
+      /rango\s+consumo\s+kwh[\s\S]{0,1200}/i
     )?.[0] ?? liquidation;
 
     const candidates = Array.from(
