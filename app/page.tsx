@@ -209,6 +209,47 @@ function nearbyPdfText(
     .join(" ");
 }
 
+function pdfRowsNearLabel(
+  items: PdfTextItem[],
+  labelPattern: RegExp,
+  rowTolerance = 4
+) {
+  const ordered = [...items].sort((a, b) => {
+    const yDiff = Math.abs(b.y - a.y);
+    return yDiff > rowTolerance ? b.y - a.y : a.x - b.x;
+  });
+
+  const rows: Array<{ y: number; items: PdfTextItem[] }> = [];
+
+  for (const item of ordered) {
+    const row = rows.find((candidate) => Math.abs(candidate.y - item.y) <= rowTolerance);
+    if (row) {
+      row.items.push(item);
+    } else {
+      rows.push({ y: item.y, items: [item] });
+    }
+  }
+
+  for (const row of rows) {
+    const rowItems = [...row.items].sort((a, b) => a.x - b.x);
+    const rowText = rowItems.map((item) => item.text).join(" ");
+    if (labelPattern.test(normalizeLoose(rowText))) {
+      const rowIndex = rows.indexOf(row);
+      return rows
+        .slice(Math.max(0, rowIndex - 1), Math.min(rows.length, rowIndex + 4))
+        .map((candidate) =>
+          [...candidate.items]
+            .sort((a, b) => a.x - b.x)
+            .map((item) => item.text)
+            .join(" ")
+        )
+        .join("\n");
+    }
+  }
+
+  return "";
+}
+
 function extractReadingFromText(text: string) {
   const tokens = Array.from(
     text.matchAll(/\b\d{1,6}(?:[.,]\d{1,2})?\b/g)
@@ -260,44 +301,46 @@ function extractStructuredPdfData(
   const clean = normalizeInvoiceFieldText(text);
   const result: Partial<FormState> = {};
 
+  const municipalityText = items.length
+    ? pdfRowsNearLabel(items, /^municipio/)
+    : "";
+
   const municipality =
     clean.match(
-      /municipio\s*[:\-]?\s*(?:\d{1,4}\s+)?([A-Za-zÁÉÍÓÚáéíóúÑñ]{3,30})(?=\s*[-:]?\s*servicio|\s+ciclo|$)/i
+      /municipio\s*[:\-]?\s*(?:\d{1,4}\s+)?([A-Za-z]{3,30})(?=\s*[-:]?\s*servicio|\s+ciclo|$)/i
     ) ||
-    clean.match(
-      /municipio\s*[:\-]?\s*(?:\d{1,4}\s+)?([A-Za-zÁÉÍÓÚáéíóúÑñ]{3,30})/i
+    municipalityText.match(
+      /municipio\s*[:\-]?\s*(?:\d{1,4}\s+)?([A-Za-z]{3,30})(?=\s*[-:]?\s*servicio|\s+ciclo|\s|$)/i
     );
 
   if (municipality) {
     result.municipality = municipality[1].trim();
-  } else if (items.length) {
-    const nearby = nearbyPdfText(items, /^municipio$/);
-    const match = nearby.match(/(?:\d{1,4}\s+)?([A-Za-zÁÉÍÓÚáéíóúÑñ]{3,30})/i);
-    if (match) result.municipality = match[1].trim();
   }
+
+  const estratoText = items.length
+    ? pdfRowsNearLabel(items, /^(?:estrato|est)\b/)
+    : "";
 
   const estrato =
     clean.match(/(?:estrato|est)\s*[:.]?\s*0?([1-6])\b/i) ||
-    clean.match(/(?:estrato|est)\s+0?([1-6])\b/i);
+    estratoText.match(/(?:estrato|est)\s*[:.]?\s*0?([1-6])\b/i);
 
   if (estrato) {
     result.estrato = estrato[1];
-  } else if (items.length) {
-    const nearby = nearbyPdfText(items, /^(?:estrato|est)$/);
-    const match = nearby.match(/\b0?([1-6])\b/);
-    if (match) result.estrato = match[1];
   }
+
+  const daysText = items.length
+    ? pdfRowsNearLabel(items, /^d[ií]as\s+facturados/)
+    : "";
 
   const days =
     clean.match(/d[ií]as\s+facturados\s*[:.]?\s*(\d{1,3})\b/i) ||
-    clean.match(/d[ií]as\s+facturados[\s\S]{0,40}?(\d{1,3})\b/i);
+    daysText.match(/d[ií]as\s+facturados\s*[:.]?\s*(\d{1,3})\b/i) ||
+    daysText.match(/(?:^|\s)(\d{1,3})\s*$/m);
 
   if (days) {
-    result.days = days[1];
-  } else if (items.length) {
-    const nearby = nearbyPdfText(items, /^d[ií]as\s+facturados$/);
-    const match = nearby.match(/\b(\d{1,3})\b/);
-    if (match) result.days = match[1];
+    const value = Number(days[1]);
+    if (value >= 1 && value <= 120) result.days = days[1];
   }
 
   const monthMap: Record<string, string> = {
@@ -315,35 +358,33 @@ function extractStructuredPdfData(
     dic: "12", diciembre: "12",
   };
 
-  const periodRange =
-    clean.match(
-      /periodo(?:\s+facturado)?\s*[:.]?\s*(\d{1,2})\s*[/\-]\s*([A-Za-z]{3,10})\s*[/\-]\s*(\d{4})\s*[-–]\s*(\d{1,2})\s*[/\-]\s*([A-Za-z]{3,10})\s*[/\-]\s*(\d{4})/i
-    ) ||
-    clean.match(
-      /periodo(?:\s+facturado)?[\s\S]{0,80}?(\d{1,2})\s*[/\-]\s*([A-Za-z]{3,10})\s*[/\-]\s*(\d{4})/i
-    );
+  const periodText = items.length
+    ? pdfRowsNearLabel(items, /^periodo(?:\s+facturado)?/)
+    : "";
+
+  const periodSource = clean + "\n" + periodText;
+
+  const periodRange = periodSource.match(
+    /periodo(?:\s+facturado)?\s*[:.]?\s*(\d{1,2})\s*[/\-]\s*([A-Za-z]{3,10})\s*[/\-]\s*(\d{4})\s*[-–]\s*(\d{1,2})\s*[/\-]\s*([A-Za-z]{3,10})\s*[/\-]\s*(\d{4})/i
+  );
+
+  const periodSingle = periodSource.match(
+    /periodo(?:\s+facturado)?[\s:]*(\d{1,2})\s*[/\-]\s*([A-Za-z]{3,10})\s*[/\-]\s*(\d{4})/i
+  );
 
   if (periodRange) {
     const month = monthMap[periodRange[2].toLowerCase()];
-    const year = periodRange[3];
-    if (month && year) result.period = year + "-" + month;
+    if (month) result.period = periodRange[3] + "-" + month;
+  } else if (periodSingle) {
+    const month = monthMap[periodSingle[2].toLowerCase()];
+    if (month) result.period = periodSingle[3] + "-" + month;
   } else {
-    const numericPeriod = clean.match(
+    const numericPeriod = periodSource.match(
       /periodo(?:\s+facturado)?[\s:]*(\d{4})\s*[-/]\s*(\d{1,2})/i
     );
 
     if (numericPeriod) {
       result.period = numericPeriod[1] + "-" + numericPeriod[2].padStart(2, "0");
-    } else if (items.length) {
-      const nearby = nearbyPdfText(items, /^periodo$/i, 42, 500);
-      const date = nearby.match(
-        /(\d{1,2})\s*[/\-]\s*([A-Za-z]{3,10})\s*[/\-]\s*(\d{4})/i
-      );
-
-      if (date) {
-        const month = monthMap[date[2].toLowerCase()];
-        if (month) result.period = date[3] + "-" + month;
-      }
     }
   }
 
