@@ -1,0 +1,1 @@
+:root{--bg:#f5f7f4;--fg:#17351f;--surface:#fff;--muted:#64746a;--accent:#1f7a45;--soft:#e7f3eb;--border:#dbe5dd}*{box-sizing:border-box}html,body{margin:0;min-height:100%}body{background:var(--bg);color:var(--fg);font-family:Arial,Helvetica,sans-serif}button,input{font:inherit}
