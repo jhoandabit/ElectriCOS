@@ -1158,17 +1158,30 @@ export default function Home() {
           </div>
 
           <section className="scanner-card">
-            <label className="camera-dropzone">
-              <input
-                type="file"
-                accept="image/*,.pdf,application/pdf"
-                capture="environment"
-                onChange={handleInvoiceFile}
-              />
-              <span className="camera-icon">📷</span>
-              <strong>Tomar foto o seleccionar factura</strong>
-              <small>Foto o PDF. Si el PDF contiene texto digital, ElectriCOs lo leerá directamente.</small>
-            </label>
+            <div className="invoice-source-grid">
+              <label className="invoice-source-button invoice-camera-button">
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={handleInvoiceFile}
+                />
+                <span className="invoice-source-icon">📷</span>
+                <strong>Tomar foto</strong>
+                <small>Usar la cámara para fotografiar la factura.</small>
+              </label>
+
+              <label className="invoice-source-button invoice-pdf-button">
+                <input
+                  type="file"
+                  accept="application/pdf,.pdf"
+                  onChange={handleInvoiceFile}
+                />
+                <span className="invoice-source-icon">📄</span>
+                <strong>Seleccionar PDF</strong>
+                <small>Cargar una factura PDF digital.</small>
+              </label>
+            </div>
 
             {invoicePreview && !invoiceIsPdf && (
               <div className="invoice-preview">
