@@ -123,6 +123,178 @@ function preprocessInvoiceImage(file: File, mode: "gray" | "binary" | "original"
   });
 }
 
+
+type InvoiceOcrRegion = {
+  name: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  psm: number;
+};
+
+const ELECTRICOS_INVOICE_REGIONS: InvoiceOcrRegion[] = [
+  { name: "encabezado", x: 0.00, y: 0.055, width: 0.52, height: 0.070, psm: 6 },
+  { name: "medidor", x: 0.00, y: 0.255, width: 0.55, height: 0.055, psm: 7 },
+  { name: "periodo", x: 0.00, y: 0.305, width: 0.55, height: 0.035, psm: 6 },
+  { name: "liquidacion", x: 0.00, y: 0.338, width: 0.55, height: 0.060, psm: 6 },
+];
+
+async function preprocessInvoiceImageDetailed(
+  file: File,
+  mode: "gray" | "binary" | "original"
+) {
+  return new Promise<{ blob: Blob; width: number; height: number }>((resolve, reject) => {
+    const image = new Image();
+    const objectUrl = URL.createObjectURL(file);
+
+    image.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+
+      const maxWidth = 3200;
+      const scale = Math.min(1.8, maxWidth / image.naturalWidth);
+      const width = Math.max(1200, Math.round(image.naturalWidth * scale));
+      const height = Math.round(image.naturalHeight * (width / image.naturalWidth));
+
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+
+      const context = canvas.getContext("2d", { willReadFrequently: true });
+      if (!context) {
+        reject(new Error("No se pudo preparar la imagen."));
+        return;
+      }
+
+      context.imageSmoothingEnabled = true;
+      context.imageSmoothingQuality = "high";
+      context.drawImage(image, 0, 0, width, height);
+
+      const imageData = context.getImageData(0, 0, width, height);
+      const data = imageData.data;
+
+      let sum = 0;
+      const luminance = new Uint8Array(width * height);
+
+      for (let i = 0, p = 0; i < data.length; i += 4, p++) {
+        const y =
+          0.299 * data[i] +
+          0.587 * data[i + 1] +
+          0.114 * data[i + 2];
+
+        luminance[p] = Math.round(y);
+        sum += y;
+      }
+
+      const mean = sum / luminance.length;
+
+      for (let i = 0, p = 0; i < data.length; i += 4, p++) {
+        let y = luminance[p];
+
+        if (mode === "gray") {
+          y = Math.max(0, Math.min(255, Math.round((y - mean) * 1.65 + 128)));
+          data[i] = y;
+          data[i + 1] = y;
+          data[i + 2] = y;
+          data[i + 3] = 255;
+        } else if (mode === "binary") {
+          y = luminance[p] < mean - 8 ? 0 : 255;
+          data[i] = y;
+          data[i + 1] = y;
+          data[i + 2] = y;
+          data[i + 3] = 255;
+        }
+      }
+
+      context.putImageData(imageData, 0, 0);
+
+      canvas.toBlob(
+        (blob) => {
+          if (blob) resolve({ blob, width, height });
+          else reject(new Error("No se pudo generar la imagen procesada."));
+        },
+        "image/jpeg",
+        0.95
+      );
+    };
+
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("No se pudo abrir la imagen."));
+    };
+
+    image.src = objectUrl;
+  });
+}
+
+function hasUsefulInvoiceFields(fields: Partial<FormState>) {
+  return Boolean(
+    fields.municipality &&
+    fields.estrato &&
+    fields.period &&
+    fields.days &&
+    fields.previous &&
+    fields.current &&
+    fields.kwh
+  );
+}
+
+function scoreExtractedFields(fields: Partial<FormState>) {
+  let score = 0;
+
+  if (fields.municipality) score += 20;
+  if (fields.estrato) score += 15;
+  if (fields.period) score += 20;
+  if (fields.days) score += 15;
+  if (fields.previous && fields.current) score += 20;
+  if (fields.kwh) score += 30;
+
+  if (
+    fields.previous &&
+    fields.current &&
+    fields.kwh &&
+    Number(fields.current) - Number(fields.previous) === Number(fields.kwh)
+  ) {
+    score += 80;
+  }
+
+  return score;
+}
+
+function mergeInvoiceFields(
+  current: Partial<FormState>,
+  candidate: Partial<FormState>
+) {
+  const merged = { ...current };
+
+  for (const key of [
+    "municipality",
+    "estrato",
+    "period",
+    "days",
+    "previous",
+    "current",
+    "kwh",
+  ] as const) {
+    if (!merged[key] && candidate[key]) {
+      merged[key] = candidate[key];
+    }
+  }
+
+  if (
+    candidate.previous &&
+    candidate.current &&
+    candidate.kwh &&
+    Number(candidate.current) - Number(candidate.previous) === Number(candidate.kwh)
+  ) {
+    merged.previous = candidate.previous;
+    merged.current = candidate.current;
+    merged.kwh = candidate.kwh;
+  }
+
+  return merged;
+}
+
 function scoreOcrText(text: string, confidence: number) {
   const normalized = text.toLowerCase();
   let score = confidence || 0;
@@ -832,118 +1004,158 @@ export default function Home() {
     setOcrRunning(true);
     setError("");
     setOcrText("");
-    setOcrStatus("Preparando imagen para lectura…");
+    setOcrStatus("Preparando reconocimiento por zonas…");
 
     let worker: Awaited<ReturnType<typeof import("tesseract.js").createWorker>> | null = null;
 
     try {
-      const { createWorker, PSM } = await import("tesseract.js");
+      const { createWorker } = await import("tesseract.js");
 
       worker = await createWorker("spa", 1, {
         logger: (message) => {
           if (message.status === "recognizing text" && typeof message.progress === "number") {
-            setOcrStatus(`Analizando factura… ${Math.round(message.progress * 100)}%`);
-          } else if (message.status) {
-            setOcrStatus("Preparando reconocimiento…");
+            setOcrStatus("Reconociendo zona… " + Math.round(message.progress * 100) + "%");
           }
         },
       });
 
-      // PSM.AUTO es más apropiado para facturas completas con varias zonas.
-      // Tesseract.js documenta que el aumento de resolución puede mejorar
-      // notablemente el reconocimiento y permite ajustar el modo de segmentación.
       await worker.setParameters({
-        tessedit_pageseg_mode: PSM.AUTO,
         preserve_interword_spaces: "1",
         user_defined_dpi: "300",
       });
 
-      const variants = [
-        { name: "foto original · página completa", mode: "original" as const, psm: PSM.AUTO },
-        { name: "foto original · bloque", mode: "original" as const, psm: PSM.SINGLE_BLOCK },
-        { name: "imagen mejorada · página completa", mode: "gray" as const, psm: PSM.AUTO },
-        { name: "imagen mejorada · bloque", mode: "gray" as const, psm: PSM.SINGLE_BLOCK },
-        { name: "imagen mejorada · texto disperso", mode: "gray" as const, psm: PSM.SPARSE_TEXT },
-        { name: "alto contraste · texto disperso", mode: "binary" as const, psm: PSM.SPARSE_TEXT },
-      ];
+      const source = await preprocessInvoiceImageDetailed(fileToProcess, "original");
+      const aspectRatio = source.width / source.height;
 
-      const results: Array<{
-        text: string;
-        confidence: number;
-        score: number;
-        name: string;
-        extracted: Partial<FormState>;
-      }> = [];
+      const looksLikeFullInvoice =
+        aspectRatio >= 0.55 &&
+        aspectRatio <= 0.90 &&
+        source.height > source.width;
 
-      for (let index = 0; index < variants.length; index += 1) {
-        const variant = variants[index];
-        setOcrStatus(`Leyendo factura (${index + 1} de ${variants.length})…`);
+      const regionResults: string[] = [];
+      let extracted: Partial<FormState> = {};
+
+      if (looksLikeFullInvoice) {
+        for (let index = 0; index < ELECTRICOS_INVOICE_REGIONS.length; index += 1) {
+          const region = ELECTRICOS_INVOICE_REGIONS[index];
+
+          setOcrStatus(
+            "Analizando " +
+            region.name +
+            " (" +
+            (index + 1) +
+            " de " +
+            ELECTRICOS_INVOICE_REGIONS.length +
+            ")…"
+          );
+
+          await worker.setParameters({
+            tessedit_pageseg_mode: region.psm,
+            preserve_interword_spaces: "1",
+            user_defined_dpi: "300",
+          });
+
+          const rectangle = {
+            left: Math.max(0, Math.round(region.x * source.width)),
+            top: Math.max(0, Math.round(region.y * source.height)),
+            width: Math.min(source.width, Math.round(region.width * source.width)),
+            height: Math.min(source.height, Math.round(region.height * source.height)),
+          };
+
+          const result = await worker.recognize(
+            source.blob,
+            { rectangle },
+            { tsv: true }
+          );
+
+          const text = result.data.text?.trim() ?? "";
+          if (text) {
+            regionResults.push("### " + region.name + "\n" + text);
+            extracted = mergeInvoiceFields(extracted, extractInvoiceData(text));
+          }
+        }
+
+        if (!hasUsefulInvoiceFields(extracted)) {
+          const enhanced = await preprocessInvoiceImageDetailed(fileToProcess, "gray");
+
+          for (const region of ELECTRICOS_INVOICE_REGIONS) {
+            const critical =
+              !extracted.kwh ||
+              !extracted.previous ||
+              !extracted.current ||
+              !extracted.period ||
+              !extracted.days;
+
+            if (!critical) break;
+
+            await worker.setParameters({
+              tessedit_pageseg_mode: region.psm,
+              preserve_interword_spaces: "1",
+              user_defined_dpi: "300",
+            });
+
+            const rectangle = {
+              left: Math.max(0, Math.round(region.x * enhanced.width)),
+              top: Math.max(0, Math.round(region.y * enhanced.height)),
+              width: Math.min(enhanced.width, Math.round(region.width * enhanced.width)),
+              height: Math.min(enhanced.height, Math.round(region.height * enhanced.height)),
+            };
+
+            const result = await worker.recognize(
+              enhanced.blob,
+              { rectangle },
+              { tsv: true }
+            );
+
+            const text = result.data.text?.trim() ?? "";
+            if (text) {
+              regionResults.push("### " + region.name + " · mejorada\n" + text);
+              extracted = mergeInvoiceFields(extracted, extractInvoiceData(text));
+            }
+          }
+        }
+      }
+
+      if (!hasUsefulInvoiceFields(extracted)) {
+        setOcrStatus("Completando lectura general de respaldo…");
 
         await worker.setParameters({
-          tessedit_pageseg_mode: variant.psm,
+          tessedit_pageseg_mode: 3,
           preserve_interword_spaces: "1",
           user_defined_dpi: "300",
         });
 
-        const processed = await preprocessInvoiceImage(fileToProcess, variant.mode);
-        const result = await worker.recognize(
-          processed,
+        const fallback = await worker.recognize(
+          source.blob,
           {},
           { tsv: true }
         );
-        const text = result.data.text?.trim() ?? "";
-        const confidence = typeof result.data.confidence === "number" ? result.data.confidence : 0;
 
-        if (text) {
-          const extracted = extractInvoiceData(text);
-          const spatialKwh = typeof result.data.tsv === "string"
-            ? extractKwhFromTsv(result.data.tsv)
-            : null;
+        const fallbackText = fallback.data.text?.trim() ?? "";
+        if (fallbackText) {
+          regionResults.push("### lectura general\n" + fallbackText);
+          extracted = mergeInvoiceFields(extracted, extractInvoiceData(fallbackText));
 
-          // Nunca sustituimos un consumo validado por lecturas con un número
-          // obtenido únicamente por posición. La posición se usa como
-          // respaldo, no como fuente principal.
-          if (!extracted.kwh && spatialKwh) {
-            extracted.kwh = spatialKwh;
+          if (!extracted.kwh && typeof fallback.data.tsv === "string") {
+            const spatialKwh = extractKwhFromTsv(fallback.data.tsv);
+            if (spatialKwh) extracted.kwh = spatialKwh;
           }
-
-          const hasValidatedReading =
-            Boolean(extracted.previous && extracted.current && extracted.kwh) &&
-            Number(extracted.current) - Number(extracted.previous) === Number(extracted.kwh);
-
-          const fieldCount = Object.keys(extracted).length;
-          const score =
-            scoreOcrText(text, confidence) +
-            fieldCount * 25 +
-            (hasValidatedReading ? 220 : 0) +
-            (spatialKwh && Number(spatialKwh) >= 20 ? 60 : 0);
-
-          results.push({
-            text,
-            confidence,
-            score,
-            name: variant.name,
-            extracted,
-          });
         }
       }
 
-      if (!results.length) {
-        setOcrStatus("No se encontró texto legible. Intenta con una foto completa, nítida y bien iluminada.");
-        return;
-      }
+      const combinedText = regionResults.join("\n\n");
+      const fieldScore = scoreExtractedFields(extracted);
 
-      results.sort((a, b) => b.score - a.score);
-      const best = results[0];
+      setOcrText(combinedText);
+      setOcrFields(extracted);
+      setForm((current) => ({ ...current, ...extracted }));
 
-      setOcrText(best.text);
-      setOcrFields(best.extracted);
-      setForm((current) => ({ ...current, ...best.extracted }));
-
-      if (best.confidence < 55) {
-        setOcrStatus("Lectura realizada con baja confianza. Revisa los datos antes de continuar.");
+      if (fieldScore >= 180) {
+        setOcrStatus("Lectura estructurada terminada. Revisa los datos antes de guardar.");
+      } else if (fieldScore >= 100) {
+        setOcrStatus("Lectura terminada con datos parciales. Revisa y completa los datos.");
       } else {
-        setOcrStatus("Lectura terminada. Revisa y corrige los datos antes de guardar.");
+        setOcrStatus("No se pudo validar suficientemente la factura. Corrige los datos manualmente.");
       }
     } catch {
       setError("No fue posible procesar la factura. Puedes corregir los datos manualmente.");
