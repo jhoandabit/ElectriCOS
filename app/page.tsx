@@ -31,95 +31,124 @@ function parseNumber(value: string) {
   return Number.isFinite(number) ? number : null;
 }
 
-function preprocessInvoiceImage(file: File, mode: "gray" | "binary" | "original") {
-  return new Promise<Blob>((resolve, reject) => {
-    const image = new Image();
-    const objectUrl = URL.createObjectURL(file);
+async function preprocessInvoiceImage(file: File, mode: "gray" | "binary" | "original") {
+  const source = await (async () => {
+    if (typeof createImageBitmap === "function") {
+      try { return await createImageBitmap(file, { imageOrientation: "from-image" }); } catch {}
+    }
+    return await new Promise<HTMLImageElement>((resolve, reject) => {
+      const image = new Image();
+      const objectUrl = URL.createObjectURL(file);
+      image.onload = () => { URL.revokeObjectURL(objectUrl); resolve(image); };
+      image.onerror = () => { URL.revokeObjectURL(objectUrl); reject(new Error("No se pudo abrir la imagen.")); };
+      image.src = objectUrl;
+    });
+  })();
 
-    image.onload = () => {
-      URL.revokeObjectURL(objectUrl);
+  const isBitmap = "close" in source;
+  const sourceWidth = isBitmap ? source.width : source.naturalWidth;
+  const sourceHeight = isBitmap ? source.height : source.naturalHeight;
 
-      // Tesseract funciona mejor cuando el texto llega con suficiente
-      // resolución. En fotos de factura el documento puede ocupar solo una
-      // parte de la imagen, por eso permitimos una ampliación mayor.
-      const maxWidth = 3200;
-      const scale = Math.min(1.8, maxWidth / image.naturalWidth);
-      const width = Math.max(1200, Math.round(image.naturalWidth * scale));
-      const height = Math.round(image.naturalHeight * (width / image.naturalWidth));
+  if (!sourceWidth || !sourceHeight) {
+    if (isBitmap) (source as ImageBitmap).close();
+    throw new Error("La imagen no tiene dimensiones válidas.");
+  }
 
-      const canvas = document.createElement("canvas");
-      canvas.width = width;
-      canvas.height = height;
+  const maxDimension = 3600;
+  const scale = Math.min(1.35, maxDimension / Math.max(sourceWidth, sourceHeight));
+  const width = Math.max(1400, Math.round(sourceWidth * scale));
+  const height = Math.max(1000, Math.round(sourceHeight * scale));
 
-      const context = canvas.getContext("2d", { willReadFrequently: true });
-      if (!context) {
-        reject(new Error("No se pudo preparar la imagen."));
-        return;
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  if (!context) {
+    if (isBitmap) (source as ImageBitmap).close();
+    throw new Error("No se pudo preparar la imagen.");
+  }
+
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = "high";
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, width, height);
+  context.drawImage(source as CanvasImageSource, 0, 0, width, height);
+  if (isBitmap) (source as ImageBitmap).close();
+
+  if (mode === "original") {
+    return await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("No se pudo generar la imagen.")), "image/png");
+    });
+  }
+
+  const imageData = context.getImageData(0, 0, width, height);
+  const data = imageData.data;
+  const luminance = new Uint8Array(width * height);
+  const histogram = new Uint32Array(256);
+
+  for (let i = 0, p = 0; i < data.length; i += 4, p++) {
+    const y = Math.max(0, Math.min(255, Math.round(
+      0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]
+    )));
+    luminance[p] = y;
+    histogram[y] += 1;
+  }
+
+  if (mode === "gray") {
+    let low = 0, high = 255, cumulative = 0;
+    const total = luminance.length;
+
+    for (let i = 0; i < 256; i += 1) {
+      cumulative += histogram[i];
+      if (cumulative >= total * 0.02) { low = i; break; }
+    }
+
+    cumulative = 0;
+    for (let i = 0; i < 256; i += 1) {
+      cumulative += histogram[i];
+      if (cumulative >= total * 0.98) { high = i; break; }
+    }
+
+    const range = Math.max(1, high - low);
+    for (let i = 0, p = 0; i < data.length; i += 4, p++) {
+      const y = Math.max(0, Math.min(255, Math.round(((luminance[p] - low) * 255) / range)));
+      data[i] = y; data[i + 1] = y; data[i + 2] = y; data[i + 3] = 255;
+    }
+  } else {
+    const total = luminance.length;
+    let sum = 0;
+    for (let i = 0; i < 256; i += 1) sum += i * histogram[i];
+
+    let sumBackground = 0, weightBackground = 0, bestThreshold = 128, bestVariance = 0;
+
+    for (let threshold = 0; threshold < 256; threshold += 1) {
+      weightBackground += histogram[threshold];
+      if (weightBackground === 0) continue;
+      const weightForeground = total - weightBackground;
+      if (weightForeground === 0) break;
+
+      sumBackground += threshold * histogram[threshold];
+      const meanBackground = sumBackground / weightBackground;
+      const meanForeground = (sum - sumBackground) / weightForeground;
+      const between = weightBackground * weightForeground * Math.pow(meanBackground - meanForeground, 2);
+
+      if (between > bestVariance) {
+        bestVariance = between;
+        bestThreshold = threshold;
       }
+    }
 
-      context.imageSmoothingEnabled = true;
-      context.imageSmoothingQuality = "high";
-      context.drawImage(image, 0, 0, width, height);
+    for (let i = 0, p = 0; i < data.length; i += 4, p++) {
+      const y = luminance[p] <= bestThreshold ? 0 : 255;
+      data[i] = y; data[i + 1] = y; data[i + 2] = y; data[i + 3] = 255;
+    }
+  }
 
-      const imageData = context.getImageData(0, 0, width, height);
-      const data = imageData.data;
+  context.putImageData(imageData, 0, 0);
 
-      let sum = 0;
-      const luminance = new Uint8Array(width * height);
-
-      for (let i = 0, p = 0; i < data.length; i += 4, p++) {
-        const y = Math.round(
-          0.299 * data[i] +
-          0.587 * data[i + 1] +
-          0.114 * data[i + 2]
-        );
-        luminance[p] = y;
-        sum += y;
-      }
-
-      const mean = sum / luminance.length;
-
-      for (let i = 0, p = 0; i < data.length; i += 4, p++) {
-        let y = luminance[p];
-
-        if (mode === "original") {
-          // Conservamos el color original. Algunas facturas usan texto
-          // naranja/verde sobre fondo claro y el paso a gris puede reducir
-          // demasiado el contraste de esos elementos.
-          continue;
-        }
-
-        if (mode === "gray") {
-          y = Math.max(0, Math.min(255, Math.round((y - mean) * 1.55 + 128)));
-        } else {
-          const threshold = mean - 8;
-          y = luminance[p] < threshold ? 0 : 255;
-        }
-
-        data[i] = y;
-        data[i + 1] = y;
-        data[i + 2] = y;
-        data[i + 3] = 255;
-      }
-
-      context.putImageData(imageData, 0, 0);
-
-      canvas.toBlob(
-        (blob) => {
-          if (blob) resolve(blob);
-          else reject(new Error("No se pudo generar la imagen procesada."));
-        },
-        "image/jpeg",
-        0.94
-      );
-    };
-
-    image.onerror = () => {
-      URL.revokeObjectURL(objectUrl);
-      reject(new Error("No se pudo abrir la imagen."));
-    };
-
-    image.src = objectUrl;
+  return await new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("No se pudo generar la imagen procesada.")), "image/png");
   });
 }
 
@@ -772,142 +801,109 @@ function extractLiquidationKwhFromTsv(tsv: string) {
   const words = parseOcrWords(tsv);
   if (!words.length) return null;
 
-  const normalizedWords = words.map((word) => ({
-    ...word,
-    normalized: ocrNormalize(word.text),
-  }));
-
+  const normalizedWords = words.map((word) => ({ ...word, normalized: ocrNormalize(word.text) }));
   const liquidationWords = normalizedWords.filter((word) =>
-    /liquidaci[oó]n/.test(word.normalized) ||
-    word.normalized === "liquidacion"
+    word.normalized === "liquidacion" || word.normalized.includes("liquidacion")
   );
-
   const consumptionWords = normalizedWords.filter((word) =>
-    word.normalized === "consumo"
+    word.normalized === "consumo" || word.normalized === "consumo kwh"
   );
+  const heading = liquidationWords.sort((a, b) => a.top - b.top)[0];
 
-  let heading: OcrWord | null = null;
-
-  for (const liquidacion of liquidationWords) {
-    const nearbyConsumption = consumptionWords.find(
-      (consumo) =>
-        Math.abs(consumo.top - liquidacion.top) <= 70 &&
-        Math.abs(consumo.left - liquidacion.left) <= 900
+  const anchors = consumptionWords
+    .filter((word) => !heading || (
+      word.top >= heading.top &&
+      word.top <= heading.top + 360 &&
+      Math.abs(word.left - heading.left) <= 1200
+    ))
+    .sort((a, b) => heading
+      ? Math.abs(a.top - heading.top) - Math.abs(b.top - heading.top)
+      : a.top - b.top
     );
 
-    if (nearbyConsumption) {
-      heading = liquidacion;
-      break;
+  for (const anchor of anchors) {
+    const anchorCenter = anchor.left + anchor.width / 2;
+    const headerBottom = anchor.top + anchor.height;
+
+    const aligned = normalizedWords
+      .filter((word) => {
+        if (word.top <= headerBottom + 3 || word.top > headerBottom + 260) return false;
+        if (word.confidence < 22) return false;
+        const value = ocrNumber(word.text);
+        if (value === null || !Number.isInteger(value) || value < 20 || value >= 2000) return false;
+        const center = word.left + word.width / 2;
+        return Math.abs(center - anchorCenter) <= Math.max(75, anchor.width * 1.8);
+      })
+      .map((word) => ({ ...word, value: ocrNumber(word.text) as number }))
+      .sort((a, b) => a.top - b.top);
+
+    const unique: Array<{ value: number; top: number }> = [];
+    for (const candidate of aligned) {
+      if (!unique.some((item) => item.value === candidate.value && Math.abs(item.top - candidate.top) < 10)) {
+        unique.push({ value: candidate.value, top: candidate.top });
+      }
+    }
+
+    if (unique.length >= 2) {
+      const pair = unique.slice(0, 2).map((item) => item.value);
+      return String(Number(pair.reduce((sum, value) => sum + value, 0).toFixed(2)));
+    }
+
+    if (unique.length === 1) {
+      const meter = extractOcrMeterReadings(tsv);
+      if (meter && Number(meter.kwh) === unique[0].value) return String(unique[0].value);
     }
   }
 
-  if (!heading) {
-    heading =
-      liquidationWords.sort((a, b) => a.top - b.top)[0] ?? null;
-  }
+  if (heading) {
+    const sectionCandidates = normalizedWords
+      .filter((word) => word.top > heading.top + 20 && word.top < heading.top + 360 && word.confidence >= 22)
+      .map((word) => ({ ...word, value: ocrNumber(word.text) }))
+      .filter((word): word is typeof word & { value: number } =>
+        word.value !== null && Number.isInteger(word.value) && word.value >= 20 && word.value < 2000
+      );
 
-  if (!heading) return null;
+    const columnGroups: Array<Array<typeof sectionCandidates[number]>> = [];
+    for (const candidate of sectionCandidates) {
+      const center = candidate.left + candidate.width / 2;
+      let group = columnGroups.find((items) => {
+        const first = items[0];
+        return Math.abs((first.left + first.width / 2) - center) <= 90;
+      });
+      if (!group) { group = []; columnGroups.push(group); }
+      group.push(candidate);
+    }
 
-  const sectionTop = Math.min(...liquidationWords.map((word) => word.top));
-  const nextSectionCandidates = normalizedWords.filter(
-    (word) =>
-      word.top > heading!.top + 25 &&
-      word.top < heading!.top + 650 &&
-      (
-        word.normalized.includes("informacion") ||
-        word.normalized.includes("acuerdos") ||
-        word.normalized.includes("ultimo") ||
-        word.normalized === "aseo"
-      )
-  );
-
-  const sectionBottom = nextSectionCandidates.length
-    ? Math.min(...nextSectionCandidates.map((word) => word.top)) - 5
-    : heading.top + 330;
-
-  const candidates = normalizedWords
-    .filter(
-      (word) =>
-        word.top > sectionTop + 20 &&
-        word.top < sectionBottom &&
-        word.confidence >= 18
-    )
-    .map((word) => ({
-      ...word,
-      value: ocrNumber(word.text),
-    }))
-    .filter(
-      (word): word is typeof word & { value: number } =>
-        word.value !== null &&
-        Number.isInteger(word.value) &&
-        word.value >= 20 &&
-        word.value < 2000
-    );
-
-  // Agrupar por filas: en EEP esperamos 173 y 180 en filas distintas.
-  const rows = ocrRows(candidates, 14);
-  const rowValues: number[] = [];
-
-  for (const row of rows) {
-    const values = [...new Set(
-      row
-        .map((word) => word.value)
-        .filter((value): value is number => value !== undefined)
-    )];
-
-    if (!values.length) continue;
-
-    // En la tabla de liquidación puede aparecer más de un número entero.
-    // Tomamos el primer candidato de consumo de la fila, no dinero ni tarifa.
-    rowValues.push(values[0]);
-  }
-
-  const plausible = [...new Set(rowValues.filter((value) => value >= 20 && value < 2000))];
-
-  // Preferimos dos franjas. Para la factura EEP de referencia:
-  // 173 + 180 = 353.
-  if (plausible.length >= 2) {
-    const pair = plausible.slice(0, 2);
-    return String(Number(pair.reduce((sum, value) => sum + value, 0).toFixed(2)));
-  }
-
-  if (plausible.length === 1) {
-    return String(plausible[0]);
+    columnGroups.sort((a, b) => b.length - a.length);
+    for (const group of columnGroups) {
+      const values = [...new Set(group.map((item) => item.value))];
+      if (values.length >= 2) {
+        return String(Number(values.slice(0, 2).reduce((sum, value) => sum + value, 0).toFixed(2)));
+      }
+    }
   }
 
   return null;
 }
 
-/**
- * Extrae lecturas únicamente de una fila que contenga "GNS" u otra
- * marca de medidor. Nunca convierte una resta arbitraria encontrada
- * en cualquier lugar de la factura en consumo.
- */
 function extractOcrMeterReadings(tsv: string) {
   const words = parseOcrWords(tsv);
-  const rows = ocrRows(words, 14);
+  const normalizedWords = words.map((word) => ({ ...word, normalized: ocrNormalize(word.text) }));
+  const meterLabels = normalizedWords.filter((word) => /^(gns|gms|gws)$/.test(word.normalized));
 
-  for (const row of rows) {
-    const gnsIndex = row.findIndex((word) =>
-      /^(gns|gms|gws)$/i.test(ocrNormalize(word.text))
-    );
+  for (const label of meterLabels) {
+    const labelRight = label.left + label.width;
+    const numbers = normalizedWords
+      .filter((word) => {
+        if (word.left <= labelRight - 2 || word.left - labelRight > 420) return false;
+        if (Math.abs(word.top - label.top) > Math.max(32, label.height * 1.8)) return false;
+        if (word.confidence < 18) return false;
 
-    if (gnsIndex < 0) continue;
-
-    const numbers = row
-      .slice(gnsIndex + 1)
-      .map((word) => ({
-        value: ocrNumber(word.text),
-        confidence: word.confidence,
-      }))
-      .filter(
-        (item): item is { value: number; confidence: number } =>
-          item.value !== null &&
-          Number.isInteger(item.value) &&
-          item.value >= 1000 &&
-          item.value <= 999999 &&
-          item.confidence >= 15
-      );
+        const value = ocrNumber(word.text);
+        return value !== null && Number.isInteger(value) && value >= 1000 && value <= 999999;
+      })
+      .map((word) => ({ ...word, value: ocrNumber(word.text) as number }))
+      .sort((a, b) => a.left - b.left);
 
     if (numbers.length < 2) continue;
 
@@ -915,13 +911,9 @@ function extractOcrMeterReadings(tsv: string) {
     const previous = numbers[1].value;
     const difference = current - previous;
 
-    if (difference <= 0 || difference >= 2000) continue;
-
-    return {
-      previous: String(previous),
-      current: String(current),
-      kwh: String(difference),
-    };
+    if (difference > 0 && difference < 2000) {
+      return { previous: String(previous), current: String(current), kwh: String(difference) };
+    }
   }
 
   return null;
@@ -934,70 +926,102 @@ function extractKwhFromTsv(tsv: string) {
 function extractInvoiceData(text: string, tsv = ""): Partial<FormState> {
   const clean = normalizeOcrText(text);
   const result: Partial<FormState> = {};
+  const words = tsv ? parseOcrWords(tsv) : [];
+  const normalizedWords = words.map((word) => ({ ...word, normalized: ocrNormalize(word.text) }));
 
-  const municipality =
-    clean.match(
-      /municipio\s*[:\-]?\s*(?:\d{1,4}\s+)?([A-Za-zÁÉÍÓÚáéíóúÑñ]{3,30})(?=\s*[-:]?\s*servicio|\s+ciclo|$)/i
-    ) ||
-    clean.match(
-      /municipio\s*[:\-]?\s*(?:\d{1,4}\s+)?([A-Za-zÁÉÍÓÚáéíóúÑñ]{3,30})/i
-    );
+  const municipalityLabel = normalizedWords.find((word) => word.normalized === "municipio");
+  if (municipalityLabel) {
+    const candidate = normalizedWords
+      .filter((word) =>
+        word.left > municipalityLabel.left &&
+        word.left - (municipalityLabel.left + municipalityLabel.width) < 500 &&
+        Math.abs(word.top - municipalityLabel.top) <= 38
+      )
+      .sort((a, b) => a.left - b.left)
+      .find((word) =>
+        /^[a-záéíóúñ]{4,30}$/i.test(word.text.trim()) &&
+        !/^(servicio|ciclo|residencial|urbano|rural)$/i.test(word.text.trim())
+      );
+    if (candidate) result.municipality = candidate.text.trim();
+  }
 
-  if (municipality) result.municipality = municipality[1].trim();
+  if (!result.municipality) {
+    const municipality =
+      clean.match(/municipio\s*[:\-]?\s*(?:\d{1,4}\s+)?([A-Za-zÁÉÍÓÚáéíóúÑñ]{3,30})(?=\s*[-:]?\s*servicio|\s+ciclo|$)/i) ||
+      clean.match(/municipio\s*[:\-]?\s*(?:\d{1,4}\s+)?([A-Za-zÁÉÍÓÚáéíóúÑñ]{3,30})/i);
+    if (municipality) result.municipality = municipality[1].trim();
+  }
 
-  const estrato =
-    clean.match(/(?:estrato|est|clase)\s*(?:socioeconom[oó]mico)?\s*[:.]?\s*0?([1-6])\b/i);
+  const estratoLabel = normalizedWords.find((word) => word.normalized === "estrato" || word.normalized === "clase");
+  if (estratoLabel) {
+    const candidate = normalizedWords
+      .filter((word) =>
+        word.left > estratoLabel.left &&
+        word.left - (estratoLabel.left + estratoLabel.width) < 180 &&
+        Math.abs(word.top - estratoLabel.top) <= 38
+      )
+      .map((word) => Number(word.text.replace(/[^0-9]/g, "")))
+      .find((value) => Number.isInteger(value) && value >= 1 && value <= 6);
+    if (candidate) result.estrato = String(candidate);
+  }
 
-  if (estrato) result.estrato = estrato[1];
+  if (!result.estrato) {
+    const estrato = clean.match(/(?:estrato|est|clase)\s*(?:socioeconom[oó]mico)?\s*[:.]?\s*0?([1-6])\b/i);
+    if (estrato) result.estrato = estrato[1];
+  }
 
-  const days =
-    clean.match(/d[ií]as\s+facturados\s*[:.\-]?\s*(\d{1,3})\b/i) ||
-    clean.match(/d[ií]as\s+facturados[\s\S]{0,50}?(\d{1,3})\b/i);
+  const daysLabel = normalizedWords.find((word) => word.normalized === "dias" || word.normalized === "dias facturados");
+  if (daysLabel) {
+    const dayCandidates = normalizedWords
+      .filter((word) =>
+        word.left > daysLabel.left &&
+        word.left - (daysLabel.left + daysLabel.width) < 240 &&
+        Math.abs(word.top - daysLabel.top) <= 42
+      )
+      .map((word) => Number(word.text.replace(/[^0-9]/g, "")))
+      .filter((value) => Number.isInteger(value) && value >= 1 && value <= 31);
+    if (dayCandidates.length) result.days = String(dayCandidates[0]);
+  }
 
-  if (days) result.days = days[1];
+  if (!result.days) {
+    const days = clean.match(/d[ií]as\s+facturados\s*[:.\-]?\s*(\d{1,2})\b/i);
+    if (days) result.days = days[1];
+  }
 
   const monthMap: Record<string, string> = {
-    ene: "01", enero: "01",
-    feb: "02", febrero: "02",
-    mar: "03", marzo: "03",
-    abr: "04", abril: "04",
-    may: "05", mayo: "05",
-    jun: "06", junio: "06",
-    jul: "07", julio: "07",
-    ago: "08", agosto: "08",
-    sep: "09", septiembre: "09",
-    oct: "10", octubre: "10",
-    nov: "11", noviembre: "11",
-    dic: "12", diciembre: "12",
+    ene: "01", enero: "01", feb: "02", febrero: "02", mar: "03", marzo: "03",
+    abr: "04", abril: "04", may: "05", mayo: "05", jun: "06", junio: "06",
+    jul: "07", julio: "07", ago: "08", agosto: "08", sep: "09", septiembre: "09",
+    oct: "10", octubre: "10", nov: "11", noviembre: "11", dic: "12", diciembre: "12",
   };
 
-  const periodWithMonth = clean.match(
-    /(?:periodo|per[ií]odo)(?:\s+facturado)?[\s:]*(\d{1,2})\s*[/\-]\s*([A-Za-z]{3,10})\s*[/\-]\s*(\d{4})/i
-  );
+  const dateRange = clean.match(/(\d{1,2})\s*[/\-]\s*([A-Za-z]{3,10})\s*[/\-]\s*(\d{4})\s*[-–]\s*(\d{1,2})\s*[/\-]\s*([A-Za-z]{3,10})\s*[/\-]\s*(\d{4})/i);
+  const periodWithMonth = clean.match(/(?:periodo|per[ií]odo)(?:\s+facturado)?[\s:]*(\d{1,2})\s*[/\-]\s*([A-Za-z]{3,10})\s*[/\-]\s*(\d{4})/i);
+  const periodNumeric = clean.match(/(?:periodo|per[ií]odo)(?:\s+facturado)?[\s:]*(\d{1,2})\s*[/\-]\s*(\d{4})/i);
+  const dateMatch = dateRange || periodWithMonth;
 
-  const periodNumeric = clean.match(
-    /(?:periodo|per[ií]odo)(?:\s+facturado)?[\s:]*(\d{1,2})\s*[/\-]\s*(\d{4})/i
-  );
-
-  if (periodWithMonth) {
-    const month = monthMap[periodWithMonth[2].toLowerCase()];
-    if (month) result.period = periodWithMonth[3] + "-" + month;
+  if (dateMatch) {
+    const month = monthMap[dateMatch[2].toLowerCase()];
+    if (month) result.period = dateMatch[3] + "-" + month;
   } else if (periodNumeric) {
     const first = Number(periodNumeric[1]);
     const second = Number(periodNumeric[2]);
     const year = first > 12 ? first : second;
     const month = first > 12 ? second : first;
+    if (year >= 2020 && month >= 1 && month <= 12) result.period = year + "-" + String(month).padStart(2, "0");
+  }
 
-    if (year >= 2020 && month >= 1 && month <= 12) {
-      result.period = year + "-" + String(month).padStart(2, "0");
+  if (!result.period) {
+    const looseDate = clean.match(/\b\d{1,2}\s*[/\-]\s*([A-Za-z]{3,10})\s*[/\-]\s*(\d{4})\b/i);
+    if (looseDate) {
+      const month = monthMap[looseDate[1].toLowerCase()];
+      if (month) result.period = looseDate[2] + "-" + month;
     }
   }
 
   const liquidationKwh = tsv ? extractLiquidationKwhFromTsv(tsv) : null;
   const meter = tsv ? extractOcrMeterReadings(tsv) : null;
 
-  // Para fotografías, la tabla de liquidación es la fuente primaria.
-  // Las lecturas solo confirman el resultado cuando la resta coincide.
   if (liquidationKwh !== null && meter) {
     if (Number(liquidationKwh) === Number(meter.kwh)) {
       result.kwh = liquidationKwh;
@@ -1006,29 +1030,19 @@ function extractInvoiceData(text: string, tsv = ""): Partial<FormState> {
     } else {
       result.kwh = liquidationKwh;
     }
-  } else if (liquidationKwh !== null) {
-    result.kwh = liquidationKwh;
   } else if (meter) {
     result.kwh = meter.kwh;
     result.previous = meter.previous;
     result.current = meter.current;
+  } else if (liquidationKwh !== null) {
+    result.kwh = liquidationKwh;
   }
 
   if (!result.kwh) {
-    const reading = extractReadingFromText(clean);
-    if (reading) Object.assign(result, reading);
-  }
-
-  if (!result.kwh) {
-    const explicitKwh = clean.match(
-      /(?:consumo\s+kwh|consumo\s+actual|consumo)[^\d]{0,35}(\d{1,4}(?:[.,]\d{1,2})?)\s*kwh\b/i
-    );
-
+    const explicitKwh = clean.match(/(?:consumo\s+kwh|consumo\s+actual|consumo)[^\d]{0,35}(\d{1,4}(?:[.,]\d{1,2})?)\s*kwh\b/i);
     if (explicitKwh) {
       const value = parseNumber(explicitKwh[1]);
-      if (value !== null && value >= 20 && value < 2000) {
-        result.kwh = String(value);
-      }
+      if (value !== null && value >= 20 && value < 2000) result.kwh = String(value);
     }
   }
 
@@ -1240,12 +1254,19 @@ export default function Home() {
             Boolean(extracted.previous && extracted.current && extracted.kwh) &&
             Number(extracted.current) - Number(extracted.previous) === Number(extracted.kwh);
 
+          const validDays = !extracted.days || (Number(extracted.days) >= 1 && Number(extracted.days) <= 31);
           const fieldCount = Object.keys(extracted).length;
           const score =
             scoreOcrText(text, confidence) +
-            fieldCount * 25 +
-            (hasValidatedReading ? 220 : 0) +
-            (spatialKwh && Number(spatialKwh) >= 20 ? 60 : 0);
+            fieldCount * 18 +
+            (extracted.kwh ? 80 : 0) +
+            (hasValidatedReading ? 260 : 0) +
+            (extracted.municipality ? 35 : 0) +
+            (extracted.estrato ? 25 : 0) +
+            (extracted.period ? 30 : 0) +
+            (extracted.days && validDays ? 20 : 0) +
+            (spatialKwh && Number(spatialKwh) >= 20 ? 40 : 0) -
+            (!validDays ? 80 : 0);
 
           results.push({
             text,
