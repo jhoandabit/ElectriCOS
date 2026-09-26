@@ -1,5 +1,13 @@
 import type { InvoiceTemplate, InvoiceProviderId } from "./types";
 
+export const GENERIC_INVOICE_REGIONS: NonNullable<InvoiceTemplate["regions"]> = [
+  { name: "encabezado", x: 0.02, y: 0.02, width: 0.96, height: 0.18, psm: 6 },
+  { name: "consumo", x: 0.02, y: 0.18, width: 0.96, height: 0.24, psm: 6 },
+  { name: "periodo", x: 0.02, y: 0.38, width: 0.96, height: 0.16, psm: 6 },
+  { name: "liquidacion", x: 0.02, y: 0.50, width: 0.96, height: 0.22, psm: 6 },
+  { name: "totales", x: 0.02, y: 0.68, width: 0.96, height: 0.30, psm: 6 },
+];
+
 export const INVOICE_TEMPLATES: InvoiceTemplate[] = [
   {
     id: "eep",
