@@ -288,6 +288,55 @@ function extractReadingFromText(text: string) {
   return null;
 }
 
+function extractReadingForConsumption(text: string, targetKwh: number) {
+  if (!Number.isFinite(targetKwh) || targetKwh <= 0) return null;
+
+  const tokens = Array.from(
+    text.matchAll(/\b\d{1,6}(?:[.,]\d{1,2})?\b/g)
+  ).map((match) => ({
+    value: parseNumber(match[0]),
+    index: match.index ?? 0,
+  }));
+
+  const readings = tokens
+    .filter(
+      (token) =>
+        token.value !== null &&
+        Number.isInteger(token.value) &&
+        token.value >= 1000 &&
+        token.value <= 999999
+    )
+    .map((token) => ({ value: token.value as number, index: token.index }));
+
+  let best: { previous: number; current: number; distance: number } | null = null;
+
+  for (const a of readings) {
+    for (const b of readings) {
+      if (a.value === b.value) continue;
+
+      const previous = Math.min(a.value, b.value);
+      const current = Math.max(a.value, b.value);
+      const difference = current - previous;
+
+      if (difference !== targetKwh) continue;
+
+      const distance = Math.abs(a.index - b.index);
+
+      if (!best || distance < best.distance) {
+        best = { previous, current, distance };
+      }
+    }
+  }
+
+  if (!best) return null;
+
+  return {
+    previous: String(best.previous),
+    current: String(best.current),
+    kwh: String(targetKwh),
+  };
+}
+
 function extractStructuredPdfData(
   text: string,
   items: PdfTextItem[] = []
@@ -382,15 +431,15 @@ function extractStructuredPdfData(
     }
   }
 
-  const reading = extractReadingFromText(clean);
-  if (reading) Object.assign(result, reading);
+  // En un PDF digital, primero tomamos el consumo de la sección
+  // explícita de liquidación. Esto evita que una pareja de números de otra
+  // tabla (por ejemplo 2002 y 2024) produzca falsamente 22 kWh.
+  const liquidationIndex = clean.search(/liquidaci[oó]n\s+del\s+consumo\s+actual/i);
+  const liquidation = liquidationIndex >= 0
+    ? clean.slice(liquidationIndex, liquidationIndex + 2200)
+    : "";
 
-  if (!result.kwh) {
-    const liquidationIndex = clean.search(/liquidaci[oó]n\s+del\s+consumo\s+actual/i);
-    const liquidation = liquidationIndex >= 0
-      ? clean.slice(liquidationIndex, liquidationIndex + 2200)
-      : clean;
-
+  if (liquidation) {
     const candidates = Array.from(
       liquidation.matchAll(/(?:^|\s)(\d{2,4}(?:[.,]\d{1,2})?)(?=\s+(?:9\d{2}\.\d{4}|\d{5,6}))/g)
     )
@@ -408,6 +457,20 @@ function extractStructuredPdfData(
     } else if (unique.length === 1) {
       result.kwh = String(unique[0]);
     }
+  }
+
+  // Solo aceptamos lecturas si su diferencia coincide exactamente con el
+  // consumo ya identificado en la liquidación. Así 2002 -> 2024 no puede
+  // desplazar un consumo real de 353 kWh.
+  if (result.kwh) {
+    const validatedReading = extractReadingForConsumption(clean, Number(result.kwh));
+    if (validatedReading) {
+      result.previous = validatedReading.previous;
+      result.current = validatedReading.current;
+    }
+  } else {
+    const reading = extractReadingFromText(clean);
+    if (reading) Object.assign(result, reading);
   }
 
   return result;
