@@ -463,7 +463,7 @@ function detectInvoiceProvider(text: string, fileName = ""): InvoiceProvider {
   if (
     source.includes("energia de pereira") ||
     source.includes("empresa de energia de pereira") ||
-    /\\beep\\b/.test(source) ||
+    .test(source) ||
     source.includes("eepvm05")
   ) {
     return "eep";
@@ -472,7 +472,7 @@ function detectInvoiceProvider(text: string, fileName = ""): InvoiceProvider {
   if (
     source.includes("empresas publicas de medellin") ||
     source.includes("empresa de servicios publicos de medellin") ||
-    /\\bepm\\b/.test(source)
+    .test(source)
   ) {
     return "epm";
   }
