@@ -188,7 +188,7 @@ function extractHistory(text: string): {
     ]);
 
   const liquidationText = text.match(
-    /liquidaci[oó]n[\\s\\S]{0,1800}/i
+    /liquidaci[oó]n[\s\S]{0,1800}/i
   )?.[0] ?? "";
 
   const liquidationKwh: number[] = [];
