@@ -675,18 +675,30 @@ type InvoiceProvider = "eep" | "epm" | "celsia" | "other";
 
 function detectInvoiceProvider(text: string, fileName = ""): InvoiceProvider {
   const source = normalizeLoose(text + " " + fileName);
+  const compact = source.replace(/\s+/g, "");
 
-  if (source.includes("energia de pereira") || source.includes("empresa de energia de pereira") || source.includes("eepvm05") || source.split(" ").includes("eep")) {
+  if (
+    source.includes("energia de pereira") ||
+    source.includes("empresa de energia de pereira") ||
+    source.includes("energiadepereira") ||
+    source.includes("empresa de energiad e pereira") ||
+    source.includes("eepvm05") ||
+    source.split(" ").includes("eep") ||
+    compact.includes("eep")
+  ) {
     return "eep";
   }
 
-  if (source.includes("empresas publicas de medellin") || source.includes("empresa de servicios publicos de medellin") || source.split(" ").includes("epm")) {
+  if (
+    source.includes("empresas publicas de medellin") ||
+    source.includes("empresa de servicios publicos de medellin") ||
+    source.includes("empresas publicas medellin") ||
+    source.split(" ").includes("epm")
+  ) {
     return "epm";
   }
 
-  if (source.includes("celsia")) {
-    return "celsia";
-  }
+  if (source.includes("celsia")) return "celsia";
 
   return "other";
 }
@@ -949,7 +961,27 @@ function extractInvoiceData(text: string, tsv = ""): Partial<FormState> {
     const municipality =
       clean.match(/municipio\s*[:\-]?\s*(?:\d{1,4}\s+)?([A-Za-zÁÉÍÓÚáéíóúÑñ]{3,30})(?=\s*[-:]?\s*servicio|\s+ciclo|$)/i) ||
       clean.match(/municipio\s*[:\-]?\s*(?:\d{1,4}\s+)?([A-Za-zÁÉÍÓÚáéíóúÑñ]{3,30})/i);
-    if (municipality) result.municipality = municipality[1].trim();
+
+    const invalidMunicipalityWords = new Set([
+      "contribucion",
+      "informacion",
+      "liquidacion",
+      "consumo",
+      "energia",
+      "servicio",
+      "residencial",
+      "facturado",
+      "actual",
+      "anterior",
+      "total",
+    ]);
+
+    if (municipality) {
+      const candidate = municipality[1].trim();
+      if (!invalidMunicipalityWords.has(ocrNormalize(candidate))) {
+        result.municipality = candidate;
+      }
+    }
   }
 
   const estratoLabel = normalizedWords.find((word) => word.normalized === "estrato" || word.normalized === "clase");
@@ -1164,6 +1196,83 @@ export default function Home() {
     }
   };
 
+  const mergeOcrEvidence = (
+    results: Array<{
+      text: string;
+      confidence: number;
+      score: number;
+      name: string;
+      extracted: Partial<FormState>;
+      tsv: string;
+    }>
+  ) => {
+    const merged: Partial<FormState> = {};
+
+    const chooseConsensus = (
+      field: keyof FormState,
+      validator?: (value: string) => boolean
+    ) => {
+      const values = results
+        .map((item) => item.extracted[field])
+        .filter((value): value is string => typeof value === "string" && value.trim() !== "")
+        .filter((value) => !validator || validator(value));
+
+      if (!values.length) return;
+
+      const counts = new Map<string, number>();
+      for (const value of values) {
+        counts.set(value, (counts.get(value) ?? 0) + 1);
+      }
+
+      const ranked = [...counts.entries()].sort((a, b) => {
+        if (b[1] !== a[1]) return b[1] - a[1];
+        const bestA = Math.max(...results.filter((item) => item.extracted[field] === a[0]).map((item) => item.score));
+        const bestB = Math.max(...results.filter((item) => item.extracted[field] === b[0]).map((item) => item.score));
+        return bestB - bestA;
+      });
+
+      if (ranked[0]) merged[field] = ranked[0][0] as never;
+    };
+
+    // Mathematical evidence has priority over OCR voting.
+    const validatedReadings = results
+      .map((item) => item.extracted)
+      .filter((item) =>
+        Boolean(item.previous && item.current && item.kwh) &&
+        Number(item.current) - Number(item.previous) === Number(item.kwh)
+      );
+
+    if (validatedReadings.length) {
+      const reading = validatedReadings[0];
+      merged.previous = reading.previous;
+      merged.current = reading.current;
+      merged.kwh = reading.kwh;
+    } else {
+      chooseConsensus("kwh", (value) => {
+        const n = Number(value);
+        return Number.isFinite(n) && n >= 20 && n < 2000;
+      });
+    }
+
+    chooseConsensus("municipality", (value) => {
+      const invalid = new Set([
+        "contribucion", "informacion", "liquidacion", "consumo",
+        "energia", "servicio", "residencial", "facturado",
+        "actual", "anterior", "total",
+      ]);
+      return !invalid.has(ocrNormalize(value)) && /^[A-Za-zÁÉÍÓÚáéíóúÑñ ]{4,40}$/.test(value);
+    });
+
+    chooseConsensus("estrato", (value) => /^[1-6]$/.test(value));
+    chooseConsensus("days", (value) => {
+      const n = Number(value);
+      return Number.isInteger(n) && n >= 1 && n <= 31;
+    });
+    chooseConsensus("period", (value) => /^20\d{2}-(0[1-9]|1[0-2])$/.test(value));
+
+    return merged;
+  };
+
   const runOcr = async (sourceFile?: File) => {
     const fileToProcess = sourceFile ?? invoiceFile;
 
@@ -1216,6 +1325,7 @@ export default function Home() {
         score: number;
         name: string;
         extracted: Partial<FormState>;
+        tsv: string;
       }> = [];
 
       for (let index = 0; index < variants.length; index += 1) {
@@ -1274,6 +1384,7 @@ export default function Home() {
             score,
             name: variant.name,
             extracted,
+            tsv: typeof result.data.tsv === "string" ? result.data.tsv : "",
           });
         }
       }
@@ -1285,16 +1396,33 @@ export default function Home() {
 
       results.sort((a, b) => b.score - a.score);
       const best = results[0];
+      const merged = mergeOcrEvidence(results);
 
-      setOcrProvider(detectInvoiceProvider(best.text, fileToProcess.name));
+      // El proveedor se determina contra TODAS las variantes OCR. No debe
+      // perderse solo porque la variante con mayor score no leyó el nombre
+      // de la empresa.
+      const providerVotes = results
+        .map((item) => detectInvoiceProvider(item.text, fileToProcess.name))
+        .filter((provider) => provider !== "other");
+
+      const provider = providerVotes.length
+        ? providerVotes[0]
+        : detectInvoiceProvider(best.text, fileToProcess.name);
+
+      // El texto visible sigue siendo el de la mejor variante, pero los
+      // campos se consolidan usando la evidencia de las seis lecturas.
+      setOcrProvider(provider);
       setOcrText(best.text);
-      setOcrFields(best.extracted);
-      setForm((current) => ({ ...current, ...best.extracted }));
+      setOcrFields(merged);
+      setForm((current) => ({ ...current, ...merged }));
 
-      if (best.confidence < 55) {
-        setOcrStatus("Lectura realizada con baja confianza. Revisa los datos antes de continuar.");
-      } else {
+      const evidenceCount = Object.keys(merged).length;
+      if (evidenceCount === 0) {
+        setOcrStatus("La foto fue leída, pero no hubo evidencia suficiente para extraer datos. Intenta una foto más frontal y nítida.");
+      } else if (merged.kwh) {
         setOcrStatus("Lectura terminada. Revisa y corrige los datos antes de guardar.");
+      } else {
+        setOcrStatus("Texto leído, pero el consumo no pudo validarse automáticamente. Revisa los datos antes de guardar.");
       }
     } catch {
       setError("No fue posible procesar la factura. Puedes corregir los datos manualmente.");
