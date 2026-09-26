@@ -932,7 +932,7 @@ export default function Home() {
       results.sort((a, b) => b.score - a.score);
       const best = results[0];
 
-      const provider = detectInvoiceProvider(best.text, file.name);
+      const provider = detectInvoiceProvider(best.text, fileToProcess.name);
       setOcrProvider(provider);
       setOcrText(best.text);
       setOcrFields(best.extracted);
