@@ -1,6 +1,6 @@
-import { extractNumberTokens, normalizeInvoiceText, normalizeLoose, normalizeMonthPeriod, parseLocaleNumber } from "./normalizer";
+import { extractNumberTokens, normalizeInvoiceText, normalizeMonthPeriod, parseLocaleNumber } from "./normalizer";
 import { identifyInvoiceProvider } from "./templates";
-import { buildConsumptionEvidence, validateConsumption } from "./validation";
+import { validateConsumption } from "./validation";
 import type { InvoiceEvidence, InvoiceField, InvoiceHistoryEntry, ParsedInvoice } from "./types";
 
 function field<T extends string | number>(
