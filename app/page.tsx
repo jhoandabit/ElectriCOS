@@ -1,6 +1,8 @@
 "use client";
 
 import { ChangeEvent, FormEvent, useMemo, useState } from "react";
+import { parseInvoiceText } from "./lib/invoice/parser";
+import { GENERIC_INVOICE_REGIONS, getInvoiceTemplate, identifyInvoiceProvider } from "./lib/invoice/templates";
 
 type Screen = "home" | "manual" | "invoice";
 type FormState = {
@@ -124,21 +126,7 @@ function preprocessInvoiceImage(file: File, mode: "gray" | "binary" | "original"
 }
 
 
-type InvoiceOcrRegion = {
-  name: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  psm: number;
-};
-
-const ELECTRICOS_INVOICE_REGIONS: InvoiceOcrRegion[] = [
-  { name: "encabezado", x: 0.00, y: 0.055, width: 0.52, height: 0.070, psm: 6 },
-  { name: "medidor", x: 0.00, y: 0.255, width: 0.55, height: 0.055, psm: 7 },
-  { name: "periodo", x: 0.00, y: 0.305, width: 0.55, height: 0.035, psm: 6 },
-  { name: "liquidacion", x: 0.00, y: 0.338, width: 0.55, height: 0.060, psm: 6 },
-];
+const ELECTRICOS_INVOICE_REGIONS = getInvoiceTemplate("eep")?.regions ?? GENERIC_INVOICE_REGIONS;
 
 async function preprocessInvoiceImageDetailed(
   file: File,
@@ -974,16 +962,32 @@ export default function Home() {
 
     try {
       const extractedPdf = await extractInvoicePdf(file);
-      const extracted = extractStructuredPdfData(extractedPdf.text, extractedPdf.items);
+      const parsed = parseInvoiceText(extractedPdf.text, "pdf-text");
+
+      const extracted: Partial<FormState> = {
+        municipality: parsed.municipality.value !== null ? String(parsed.municipality.value) : undefined,
+        estrato: parsed.stratum.value !== null ? String(parsed.stratum.value) : undefined,
+        period: parsed.billingPeriod.value !== null ? String(parsed.billingPeriod.value) : undefined,
+        days: parsed.billingDays.value !== null ? String(parsed.billingDays.value) : undefined,
+        previous: parsed.previousReading.value !== null ? String(parsed.previousReading.value) : undefined,
+        current: parsed.currentReading.value !== null ? String(parsed.currentReading.value) : undefined,
+        kwh: parsed.consumptionKwh.value !== null ? String(parsed.consumptionKwh.value) : undefined,
+      };
 
       setOcrText(extractedPdf.text);
       setOcrFields(extracted);
       setForm((current) => ({ ...current, ...extracted }));
 
-      if (!extracted.kwh) {
-        setOcrStatus("PDF leído, pero no se identificó automáticamente el consumo. Revisa los datos.");
+      if (!parsed.consumptionKwh.value) {
+        setOcrStatus("PDF leído, pero no se pudo validar el consumo. Revisa los datos.");
+      } else if (parsed.validation.consistent) {
+        setOcrStatus(
+          `Factura PDF validada · ${extractedPdf.pages} página · ${parsed.consumptionKwh.value} kWh`
+        );
       } else {
-        setOcrStatus(`Factura PDF leída correctamente · ${extractedPdf.pages} página`);
+        setOcrStatus(
+          `Factura PDF leída · ${parsed.consumptionKwh.value} kWh · requiere verificación`
+        );
       }
     } catch {
       setError("No fue posible leer el PDF. Si es una factura escaneada, puedes usar una fotografía.");
@@ -1004,7 +1008,8 @@ export default function Home() {
     setOcrRunning(true);
     setError("");
     setOcrText("");
-    setOcrStatus("Preparando reconocimiento por zonas…");
+    setOcrFields({});
+    setOcrStatus("Preparando reconocimiento inteligente…");
 
     let worker: Awaited<ReturnType<typeof import("tesseract.js").createWorker>> | null = null;
 
@@ -1014,7 +1019,7 @@ export default function Home() {
       worker = await createWorker("spa", 1, {
         logger: (message) => {
           if (message.status === "recognizing text" && typeof message.progress === "number") {
-            setOcrStatus("Reconociendo zona… " + Math.round(message.progress * 100) + "%");
+            setOcrStatus("Reconociendo factura… " + Math.round(message.progress * 100) + "%");
           }
         },
       });
@@ -1025,28 +1030,48 @@ export default function Home() {
       });
 
       const source = await preprocessInvoiceImageDetailed(fileToProcess, "original");
-      const aspectRatio = source.width / source.height;
-
-      const looksLikeFullInvoice =
-        aspectRatio >= 0.55 &&
-        aspectRatio <= 0.90 &&
-        source.height > source.width;
-
       const regionResults: string[] = [];
-      let extracted: Partial<FormState> = {};
 
-      if (looksLikeFullInvoice) {
-        for (let index = 0; index < ELECTRICOS_INVOICE_REGIONS.length; index += 1) {
-          const region = ELECTRICOS_INVOICE_REGIONS[index];
+      // Primera pasada: texto completo. Sirve para identificar el proveedor
+      // y decidir qué plantilla/regiones usar. Si no reconocemos el proveedor,
+      // usamos regiones genéricas y nunca bloqueamos la factura.
+      await worker.setParameters({
+        tessedit_pageseg_mode: 3,
+        preserve_interword_spaces: "1",
+        user_defined_dpi: "300",
+      });
+
+      const fullResult = await worker.recognize(source.blob, {}, { tsv: true });
+      const fullText = fullResult.data.text?.trim() ?? "";
+
+      if (fullText) {
+        regionResults.push("### lectura general\n" + fullText);
+      }
+
+      const provider = identifyInvoiceProvider(fullText);
+      const template = getInvoiceTemplate(provider.id);
+      const regions = template?.regions ?? GENERIC_INVOICE_REGIONS;
+
+      let parsed = parseInvoiceText(
+        fullText,
+        "image-ocr"
+      );
+
+      const needsRegionalPass =
+        !parsed.validation.consistent ||
+        !parsed.consumptionKwh.value ||
+        !parsed.municipality.value ||
+        !parsed.billingPeriod.value ||
+        !parsed.billingDays.value ||
+        !parsed.previousReading.value ||
+        !parsed.currentReading.value;
+
+      if (needsRegionalPass) {
+        for (let index = 0; index < regions.length; index += 1) {
+          const region = regions[index];
 
           setOcrStatus(
-            "Analizando " +
-            region.name +
-            " (" +
-            (index + 1) +
-            " de " +
-            ELECTRICOS_INVOICE_REGIONS.length +
-            ")…"
+            `Analizando ${region.name} (${index + 1} de ${regions.length})…`
           );
 
           await worker.setParameters({
@@ -1069,93 +1094,132 @@ export default function Home() {
           );
 
           const text = result.data.text?.trim() ?? "";
-          if (text) {
-            regionResults.push("### " + region.name + "\n" + text);
-            extracted = mergeInvoiceFields(extracted, extractInvoiceData(text));
-          }
-        }
+          if (!text) continue;
 
-        if (!hasUsefulInvoiceFields(extracted)) {
-          const enhanced = await preprocessInvoiceImageDetailed(fileToProcess, "gray");
+          regionResults.push(`### ${region.name}\n${text}`);
 
-          for (const region of ELECTRICOS_INVOICE_REGIONS) {
-            const critical =
-              !extracted.kwh ||
-              !extracted.previous ||
-              !extracted.current ||
-              !extracted.period ||
-              !extracted.days;
+          const candidate = parseInvoiceText(
+            text,
+            "image-ocr"
+          );
 
-            if (!critical) break;
+          // El parser completo conserva evidencias y validaciones. Para la UI
+          // solo necesitamos los campos normalizados, pero la decisión de
+          // consumo se toma comparando todas las evidencias disponibles.
+          const candidateText = regionResults.join("\n\n");
+          const combinedParsed = parseInvoiceText(candidateText, "image-ocr");
 
-            await worker.setParameters({
-              tessedit_pageseg_mode: region.psm,
-              preserve_interword_spaces: "1",
-              user_defined_dpi: "300",
-            });
+          if (
+            combinedParsed.validation.score >= parsed.validation.score ||
+            !parsed.consumptionKwh.value
+          ) {
+            parsed = combinedParsed;
+          } else {
+            // Si la región solo aporta un dato que el acumulado no tenía,
+            // conservamos el mejor acumulado y seguimos explorando.
+            const current = parsed;
+            const mergedText = [
+              current.rawText,
+              candidate.rawText,
+            ].filter(Boolean).join("\n");
+            const merged = parseInvoiceText(mergedText, "image-ocr");
 
-            const rectangle = {
-              left: Math.max(0, Math.round(region.x * enhanced.width)),
-              top: Math.max(0, Math.round(region.y * enhanced.height)),
-              width: Math.min(enhanced.width, Math.round(region.width * enhanced.width)),
-              height: Math.min(enhanced.height, Math.round(region.height * enhanced.height)),
-            };
-
-            const result = await worker.recognize(
-              enhanced.blob,
-              { rectangle },
-              { tsv: true }
-            );
-
-            const text = result.data.text?.trim() ?? "";
-            if (text) {
-              regionResults.push("### " + region.name + " · mejorada\n" + text);
-              extracted = mergeInvoiceFields(extracted, extractInvoiceData(text));
+            if (
+              merged.municipality.value ||
+              merged.billingPeriod.value ||
+              merged.billingDays.value ||
+              merged.previousReading.value ||
+              merged.currentReading.value
+            ) {
+              parsed = merged;
             }
           }
         }
       }
 
-      if (!hasUsefulInvoiceFields(extracted)) {
-        setOcrStatus("Completando lectura general de respaldo…");
+      // Segunda variante: contraste mejorado. Solo se ejecuta si todavía no
+      // existe evidencia suficiente; así evitamos multiplicar el coste de OCR
+      // en facturas fáciles.
+      if (
+        !parsed.validation.consistent ||
+        !parsed.consumptionKwh.value ||
+        !parsed.previousReading.value ||
+        !parsed.currentReading.value
+      ) {
+        setOcrStatus("Repitiendo zonas críticas con contraste mejorado…");
 
-        await worker.setParameters({
-          tessedit_pageseg_mode: 3,
-          preserve_interword_spaces: "1",
-          user_defined_dpi: "300",
-        });
+        const enhanced = await preprocessInvoiceImageDetailed(fileToProcess, "gray");
 
-        const fallback = await worker.recognize(
-          source.blob,
-          {},
-          { tsv: true }
-        );
+        for (const region of regions.slice(0, 4)) {
+          await worker.setParameters({
+            tessedit_pageseg_mode: region.psm,
+            preserve_interword_spaces: "1",
+            user_defined_dpi: "300",
+          });
 
-        const fallbackText = fallback.data.text?.trim() ?? "";
-        if (fallbackText) {
-          regionResults.push("### lectura general\n" + fallbackText);
-          extracted = mergeInvoiceFields(extracted, extractInvoiceData(fallbackText));
+          const rectangle = {
+            left: Math.max(0, Math.round(region.x * enhanced.width)),
+            top: Math.max(0, Math.round(region.y * enhanced.height)),
+            width: Math.min(enhanced.width, Math.round(region.width * enhanced.width)),
+            height: Math.min(enhanced.height, Math.round(region.height * enhanced.height)),
+          };
 
-          if (!extracted.kwh && typeof fallback.data.tsv === "string") {
-            const spatialKwh = extractKwhFromTsv(fallback.data.tsv);
-            if (spatialKwh) extracted.kwh = spatialKwh;
+          const result = await worker.recognize(
+            enhanced.blob,
+            { rectangle },
+            { tsv: true }
+          );
+
+          const text = result.data.text?.trim() ?? "";
+          if (!text) continue;
+
+          regionResults.push(`### ${region.name} · contraste\n${text}`);
+
+          const candidate = parseInvoiceText(
+            regionResults.join("\n\n"),
+            "image-ocr"
+          );
+
+          if (candidate.validation.score >= parsed.validation.score) {
+            parsed = candidate;
           }
         }
       }
 
       const combinedText = regionResults.join("\n\n");
-      const fieldScore = scoreExtractedFields(extracted);
+      const finalParsed = parseInvoiceText(combinedText, "image-ocr");
+
+      const selected =
+        finalParsed.validation.score >= parsed.validation.score
+          ? finalParsed
+          : parsed;
+
+      const extracted: Partial<FormState> = {
+        municipality: selected.municipality.value !== null ? String(selected.municipality.value) : undefined,
+        estrato: selected.stratum.value !== null ? String(selected.stratum.value) : undefined,
+        period: selected.billingPeriod.value !== null ? String(selected.billingPeriod.value) : undefined,
+        days: selected.billingDays.value !== null ? String(selected.billingDays.value) : undefined,
+        previous: selected.previousReading.value !== null ? String(selected.previousReading.value) : undefined,
+        current: selected.currentReading.value !== null ? String(selected.currentReading.value) : undefined,
+        kwh: selected.consumptionKwh.value !== null ? String(selected.consumptionKwh.value) : undefined,
+      };
 
       setOcrText(combinedText);
       setOcrFields(extracted);
       setForm((current) => ({ ...current, ...extracted }));
 
-      if (fieldScore >= 180) {
-        setOcrStatus("Lectura estructurada terminada. Revisa los datos antes de guardar.");
-      } else if (fieldScore >= 100) {
-        setOcrStatus("Lectura terminada con datos parciales. Revisa y completa los datos.");
+      if (selected.validation.consistent) {
+        setOcrStatus(
+          `Lectura validada · proveedor: ${selected.provider.value ?? "genérico"} · ${selected.consumptionKwh.value ?? "—"} kWh`
+        );
+      } else if (selected.consumptionKwh.value) {
+        setOcrStatus(
+          `Lectura parcial · ${selected.consumptionKwh.value} kWh. Revisa los datos antes de guardar.`
+        );
       } else {
-        setOcrStatus("No se pudo validar suficientemente la factura. Corrige los datos manualmente.");
+        setOcrStatus(
+          "No se pudo validar suficientemente la factura. Corrige los datos manualmente."
+        );
       }
     } catch {
       setError("No fue posible procesar la factura. Puedes corregir los datos manualmente.");
