@@ -463,6 +463,83 @@ button:disabled {
   gap: 13px;
 }
 
+.invoice-source-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.invoice-source-button {
+  min-height: 155px;
+  border: 1.5px solid var(--border);
+  border-radius: 18px;
+  background: var(--surface);
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 7px;
+  padding: 20px 15px;
+  text-align: center;
+  cursor: pointer;
+  transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.invoice-source-button:hover {
+  border-color: #a9c4b0;
+  background: var(--soft);
+}
+
+.invoice-source-button:active {
+  transform: scale(0.985);
+}
+
+.invoice-source-button input {
+  display: none;
+}
+
+.invoice-source-icon {
+  width: 52px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+  border-radius: 16px;
+  background: var(--soft);
+  font-size: 27px;
+}
+
+.invoice-source-button strong {
+  font-size: 15px;
+}
+
+.invoice-source-button small {
+  max-width: 230px;
+  color: var(--muted);
+  line-height: 1.4;
+  font-size: 12px;
+}
+
+.invoice-camera-button {
+  border-color: #a9c4b0;
+}
+
+.invoice-pdf-button .invoice-source-icon {
+  background: #fff0ee;
+}
+
+.invoice-pdf-button {
+  border-color: #ead7d3;
+}
+
+@media (max-width: 520px) {
+  .invoice-source-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .invoice-source-button {
+    min-height: 125px;
+  }
+}
+
 .camera-dropzone {
   min-height: 150px;
   border: 1.5px dashed #a9c4b0;
