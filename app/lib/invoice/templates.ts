@@ -10,6 +10,35 @@ export const GENERIC_INVOICE_REGIONS: NonNullable<InvoiceTemplate["regions"]> = 
 
 export const INVOICE_TEMPLATES: InvoiceTemplate[] = [
   {
+    id: "epm",
+    name: "EPM",
+    aliases: [
+      "epm",
+      "empresas publicas de medellin",
+      "empresa de servicios publicos de medellin",
+    ],
+    anchors: [
+      "historico de consumos",
+      "valores facturados",
+      "lectura actual",
+      "lectura anterior",
+      "consumo energia",
+      "promedio de los ultimos",
+    ],
+    fieldHints: {
+      municipality: ["municipio"],
+      stratum: ["estrato"],
+      billingPeriod: ["periodo", "calculo consumo"],
+      billingDays: ["dias fact", "dias de consumo"],
+      previousReading: ["lectura anterior"],
+      currentReading: ["lectura actual"],
+      consumptionKwh: ["consumo", "kwh", "consumo energia"],
+      averageKwh: ["prom", "promedio"],
+      tariffValue: ["costo", "kwh"],
+      invoiceNumber: ["factura", "contrato"],
+    },
+  },
+  {
     id: "eep",
     name: "Empresa de Energía de Pereira",
     aliases: [
