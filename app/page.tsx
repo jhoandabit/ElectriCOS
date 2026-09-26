@@ -681,26 +681,24 @@ function numberCandidates(text: string) {
     );
 }
 
-function extractKwhFromTsv(tsv: string) {
-  if (!tsv) return null;
+type OcrWord = {
+  lineKey: string;
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  text: string;
+  confidence: number;
+};
 
-  type OcrWord = {
-    lineKey: string;
-    left: number;
-    top: number;
-    width: number;
-    height: number;
-    text: string;
-    confidence: number;
-  };
-
+function parseOcrWords(tsv: string): OcrWord[] {
   const words: OcrWord[] = [];
 
-  for (const line of tsv.split(/\\r?\\n/).slice(1)) {
-    const parts = line.split("\\t");
+  for (const line of tsv.split(/\r?\n/).slice(1)) {
+    const parts = line.split("\t");
     if (parts.length < 12) continue;
 
-    const text = parts.slice(11).join("\\t").trim();
+    const text = parts.slice(11).join("\t").trim();
     const left = Number(parts[6]);
     const top = Number(parts[7]);
     const width = Number(parts[8]);
@@ -720,80 +718,320 @@ function extractKwhFromTsv(tsv: string) {
     });
   }
 
-  const normalize = (value: string) =>
-    value
-      .normalize("NFD")
-      .replace(/[\\u0300-\\u036f]/g, "")
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, " ")
-      .trim();
+  return words;
+}
 
-  const grouped = new Map<string, OcrWord[]>();
+function ocrNormalize(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
 
-  for (const word of words) {
-    const list = grouped.get(word.lineKey) ?? [];
-    list.push(word);
-    grouped.set(word.lineKey, list);
+function ocrNumber(value: string) {
+  const raw = value.replace(/[^0-9.,]/g, "");
+  if (!raw) return null;
+  return parseNumber(raw);
+}
+
+function ocrRows(words: OcrWord[], tolerance = 12) {
+  const rows: OcrWord[][] = [];
+
+  for (const word of [...words].sort((a, b) => a.top - b.top || a.left - b.left)) {
+    let row = rows.find((candidate) =>
+      Math.abs(candidate[0].top - word.top) <= tolerance
+    );
+
+    if (!row) {
+      row = [];
+      rows.push(row);
+    }
+
+    row.push(word);
   }
 
-  for (const lineWords of grouped.values()) {
-    lineWords.sort((a, b) => a.left - b.left);
+  for (const row of rows) {
+    row.sort((a, b) => a.left - b.left);
+  }
 
-    const lineText = normalize(lineWords.map((word) => word.text).join(" "));
-    if (!lineText.includes("consumo") || !lineText.includes("kwh")) continue;
+  return rows;
+}
 
-    const anchorWords = lineWords.filter((word) => {
-      const value = normalize(word.text);
-      return value.includes("consumo") || value === "kwh";
-    });
+/**
+ * Busca el consumo exclusivamente dentro de la sección visual
+ * "LIQUIDACIÓN DEL CONSUMO ACTUAL".
+ *
+ * Esto es deliberadamente diferente al parser de texto plano:
+ * en una foto de factura existen muchas cifras (históricos, lecturas,
+ * valores monetarios). El consumo se debe localizar por región.
+ */
+function extractLiquidationKwhFromTsv(tsv: string) {
+  const words = parseOcrWords(tsv);
+  if (!words.length) return null;
 
-    if (!anchorWords.length) continue;
+  const normalizedWords = words.map((word) => ({
+    ...word,
+    normalized: ocrNormalize(word.text),
+  }));
 
-    const left = Math.min(...anchorWords.map((word) => word.left));
-    const right = Math.max(...anchorWords.map((word) => word.left + word.width));
-    const centerX = (left + right) / 2;
-    const headerBottom = Math.max(...anchorWords.map((word) => word.top + word.height));
+  const liquidationWords = normalizedWords.filter((word) =>
+    /liquidaci[oó]n/.test(word.normalized) ||
+    word.normalized === "liquidacion"
+  );
 
-    const candidates = words
-      .filter((word) => word.top > headerBottom + 2 && word.top < headerBottom + 180)
-      .filter((word) => {
-        const center = word.left + word.width / 2;
-        return Math.abs(center - centerX) <= 80;
-      })
-      .map((word) => ({
-        ...word,
-        value: parseNumber(word.text.replace(/[^0-9.,]/g, "")),
-      }))
-      .filter((word) =>
-        word.value !== null &&
-        word.value >= 20 &&
-        word.value < 2000 &&
-        word.confidence >= 20
+  const consumptionWords = normalizedWords.filter((word) =>
+    word.normalized === "consumo"
+  );
+
+  let heading: OcrWord | null = null;
+
+  for (const liquidacion of liquidationWords) {
+    const nearbyConsumption = consumptionWords.find(
+      (consumo) =>
+        Math.abs(consumo.top - liquidacion.top) <= 70 &&
+        Math.abs(consumo.left - liquidacion.left) <= 900
+    );
+
+    if (nearbyConsumption) {
+      heading = liquidacion;
+      break;
+    }
+  }
+
+  if (!heading) {
+    heading =
+      liquidationWords.sort((a, b) => a.top - b.top)[0] ?? null;
+  }
+
+  if (!heading) return null;
+
+  const sectionTop = Math.min(...liquidationWords.map((word) => word.top));
+  const nextSectionCandidates = normalizedWords.filter(
+    (word) =>
+      word.top > heading!.top + 25 &&
+      word.top < heading!.top + 650 &&
+      (
+        word.normalized.includes("informacion") ||
+        word.normalized.includes("acuerdos") ||
+        word.normalized.includes("ultimo") ||
+        word.normalized === "aseo"
       )
-      .sort((a, b) => a.top - b.top);
+  );
 
-    const unique = [
-      ...new Set(
-        candidates
-          .map((candidate) => candidate.value)
-          .filter((value): value is number => value !== null)
-      ),
-    ];
+  const sectionBottom = nextSectionCandidates.length
+    ? Math.min(...nextSectionCandidates.map((word) => word.top)) - 5
+    : heading.top + 330;
 
-    if (unique.length >= 2) {
-      // La columna puede contener 173 y 180 para un mismo período.
-      // El consumo total es la suma de las franjas, no el primer valor.
-      return String(
-        Number(unique.slice(0, 2).reduce((sum, value) => sum + value, 0).toFixed(2))
-      );
-    }
+  const candidates = normalizedWords
+    .filter(
+      (word) =>
+        word.top > sectionTop + 20 &&
+        word.top < sectionBottom &&
+        word.confidence >= 18
+    )
+    .map((word) => ({
+      ...word,
+      value: ocrNumber(word.text),
+    }))
+    .filter(
+      (word): word is typeof word & { value: number } =>
+        word.value !== null &&
+        Number.isInteger(word.value) &&
+        word.value >= 20 &&
+        word.value < 2000
+    );
 
-    if (unique.length === 1) {
-      return String(unique[0]);
-    }
+  // Agrupar por filas: en EEP esperamos 173 y 180 en filas distintas.
+  const rows = ocrRows(candidates, 14);
+  const rowValues: number[] = [];
+
+  for (const row of rows) {
+    const values = [...new Set(
+      row
+        .map((word) => word.value)
+        .filter((value): value is number => value !== undefined)
+    )];
+
+    if (!values.length) continue;
+
+    // En la tabla de liquidación puede aparecer más de un número entero.
+    // Tomamos el primer candidato de consumo de la fila, no dinero ni tarifa.
+    rowValues.push(values[0]);
+  }
+
+  const plausible = [...new Set(rowValues.filter((value) => value >= 20 && value < 2000))];
+
+  // Preferimos dos franjas. Para la factura EEP de referencia:
+  // 173 + 180 = 353.
+  if (plausible.length >= 2) {
+    const pair = plausible.slice(0, 2);
+    return String(Number(pair.reduce((sum, value) => sum + value, 0).toFixed(2)));
+  }
+
+  if (plausible.length === 1) {
+    return String(plausible[0]);
   }
 
   return null;
+}
+
+/**
+ * Extrae lecturas únicamente de una fila que contenga "GNS" u otra
+ * marca de medidor. Nunca convierte una resta arbitraria encontrada
+ * en cualquier lugar de la factura en consumo.
+ */
+function extractOcrMeterReadings(tsv: string) {
+  const words = parseOcrWords(tsv);
+  const rows = ocrRows(words, 14);
+
+  for (const row of rows) {
+    const gnsIndex = row.findIndex((word) =>
+      /^(gns|gms|gws)$/i.test(ocrNormalize(word.text))
+    );
+
+    if (gnsIndex < 0) continue;
+
+    const numbers = row
+      .slice(gnsIndex + 1)
+      .map((word) => ({
+        value: ocrNumber(word.text),
+        confidence: word.confidence,
+      }))
+      .filter(
+        (item): item is { value: number; confidence: number } =>
+          item.value !== null &&
+          Number.isInteger(item.value) &&
+          item.value >= 1000 &&
+          item.value <= 999999 &&
+          item.confidence >= 15
+      );
+
+    if (numbers.length < 2) continue;
+
+    const current = numbers[0].value;
+    const previous = numbers[1].value;
+    const difference = current - previous;
+
+    if (difference <= 0 || difference >= 2000) continue;
+
+    return {
+      previous: String(previous),
+      current: String(current),
+      kwh: String(difference),
+    };
+  }
+
+  return null;
+}
+
+function extractKwhFromTsv(tsv: string) {
+  return extractLiquidationKwhFromTsv(tsv);
+}
+
+function extractInvoiceData(text: string, tsv = ""): Partial<FormState> {
+  const clean = normalizeOcrText(text);
+  const result: Partial<FormState> = {};
+
+  const municipality =
+    clean.match(
+      /municipio\s*[:\-]?\s*(?:\d{1,4}\s+)?([A-Za-zÁÉÍÓÚáéíóúÑñ]{3,30})(?=\s*[-:]?\s*servicio|\s+ciclo|$)/i
+    ) ||
+    clean.match(
+      /municipio\s*[:\-]?\s*(?:\d{1,4}\s+)?([A-Za-zÁÉÍÓÚáéíóúÑñ]{3,30})/i
+    );
+
+  if (municipality) result.municipality = municipality[1].trim();
+
+  const estrato =
+    clean.match(/(?:estrato|est|clase)\s*(?:socioeconom[oó]mico)?\s*[:.]?\s*0?([1-6])\b/i);
+
+  if (estrato) result.estrato = estrato[1];
+
+  const days =
+    clean.match(/d[ií]as\s+facturados\s*[:.\-]?\s*(\d{1,3})\b/i) ||
+    clean.match(/d[ií]as\s+facturados[\s\S]{0,50}?(\d{1,3})\b/i);
+
+  if (days) result.days = days[1];
+
+  const monthMap: Record<string, string> = {
+    ene: "01", enero: "01",
+    feb: "02", febrero: "02",
+    mar: "03", marzo: "03",
+    abr: "04", abril: "04",
+    may: "05", mayo: "05",
+    jun: "06", junio: "06",
+    jul: "07", julio: "07",
+    ago: "08", agosto: "08",
+    sep: "09", septiembre: "09",
+    oct: "10", octubre: "10",
+    nov: "11", noviembre: "11",
+    dic: "12", diciembre: "12",
+  };
+
+  const periodWithMonth = clean.match(
+    /(?:periodo|per[ií]odo)(?:\s+facturado)?[\s:]*(\d{1,2})\s*[/\-]\s*([A-Za-z]{3,10})\s*[/\-]\s*(\d{4})/i
+  );
+
+  const periodNumeric = clean.match(
+    /(?:periodo|per[ií]odo)(?:\s+facturado)?[\s:]*(\d{1,2})\s*[/\-]\s*(\d{4})/i
+  );
+
+  if (periodWithMonth) {
+    const month = monthMap[periodWithMonth[2].toLowerCase()];
+    if (month) result.period = periodWithMonth[3] + "-" + month;
+  } else if (periodNumeric) {
+    const first = Number(periodNumeric[1]);
+    const second = Number(periodNumeric[2]);
+    const year = first > 12 ? first : second;
+    const month = first > 12 ? second : first;
+
+    if (year >= 2020 && month >= 1 && month <= 12) {
+      result.period = year + "-" + String(month).padStart(2, "0");
+    }
+  }
+
+  const liquidationKwh = tsv ? extractLiquidationKwhFromTsv(tsv) : null;
+  const meter = tsv ? extractOcrMeterReadings(tsv) : null;
+
+  // Para fotografías, la tabla de liquidación es la fuente primaria.
+  // Las lecturas solo confirman el resultado cuando la resta coincide.
+  if (liquidationKwh !== null && meter) {
+    if (Number(liquidationKwh) === Number(meter.kwh)) {
+      result.kwh = liquidationKwh;
+      result.previous = meter.previous;
+      result.current = meter.current;
+    } else {
+      result.kwh = liquidationKwh;
+    }
+  } else if (liquidationKwh !== null) {
+    result.kwh = liquidationKwh;
+  } else if (meter) {
+    result.kwh = meter.kwh;
+    result.previous = meter.previous;
+    result.current = meter.current;
+  }
+
+  if (!result.kwh) {
+    const reading = extractReadingFromText(clean);
+    if (reading) Object.assign(result, reading);
+  }
+
+  if (!result.kwh) {
+    const explicitKwh = clean.match(
+      /(?:consumo\s+kwh|consumo\s+actual|consumo)[^\d]{0,35}(\d{1,4}(?:[.,]\d{1,2})?)\s*kwh\b/i
+    );
+
+    if (explicitKwh) {
+      const value = parseNumber(explicitKwh[1]);
+      if (value !== null && value >= 20 && value < 2000) {
+        result.kwh = String(value);
+      }
+    }
+  }
+
+  return result;
 }
 
 function extractInvoiceData(text: string): Partial<FormState> {
@@ -1073,9 +1311,9 @@ export default function Home() {
         const confidence = typeof result.data.confidence === "number" ? result.data.confidence : 0;
 
         if (text) {
-          const extracted = extractInvoiceData(text);
+          const extracted = extractInvoiceData(text, typeof result.data.tsv === "string" ? result.data.tsv : "");
           const spatialKwh = typeof result.data.tsv === "string"
-            ? extractKwhFromTsv(result.data.tsv)
+            ? extractLiquidationKwhFromTsv(result.data.tsv)
             : null;
 
           // Nunca sustituimos un consumo validado por lecturas con un número
