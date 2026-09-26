@@ -962,35 +962,70 @@ export default function Home() {
 
     try {
       const extractedPdf = await extractInvoicePdf(file);
+
+      // El parser semántico trabaja sobre el texto completo y es común a
+      // cualquier comercializador. Para PDF digital conservamos además la
+      // lectura por coordenadas, porque algunos documentos separan la etiqueta
+      // ("Periodo facturado", "Días facturados", etc.) del valor en objetos
+      // gráficos distintos.
       const parsed = parseInvoiceText(extractedPdf.text, "pdf-text");
+      const coordinateFields = extractStructuredPdfData(
+        extractedPdf.text,
+        extractedPdf.items
+      );
 
       const extracted: Partial<FormState> = {
-        municipality: parsed.municipality.value !== null ? String(parsed.municipality.value) : undefined,
-        estrato: parsed.stratum.value !== null ? String(parsed.stratum.value) : undefined,
-        period: parsed.billingPeriod.value !== null ? String(parsed.billingPeriod.value) : undefined,
-        days: parsed.billingDays.value !== null ? String(parsed.billingDays.value) : undefined,
-        previous: parsed.previousReading.value !== null ? String(parsed.previousReading.value) : undefined,
-        current: parsed.currentReading.value !== null ? String(parsed.currentReading.value) : undefined,
-        kwh: parsed.consumptionKwh.value !== null ? String(parsed.consumptionKwh.value) : undefined,
+        municipality:
+          parsed.municipality.value !== null
+            ? String(parsed.municipality.value)
+            : coordinateFields.municipality,
+        estrato:
+          parsed.stratum.value !== null
+            ? String(parsed.stratum.value)
+            : coordinateFields.estrato,
+        period:
+          parsed.billingPeriod.value !== null
+            ? String(parsed.billingPeriod.value)
+            : coordinateFields.period,
+        days:
+          parsed.billingDays.value !== null
+            ? String(parsed.billingDays.value)
+            : coordinateFields.days,
+        previous:
+          parsed.previousReading.value !== null
+            ? String(parsed.previousReading.value)
+            : coordinateFields.previous,
+        current:
+          parsed.currentReading.value !== null
+            ? String(parsed.currentReading.value)
+            : coordinateFields.current,
+        kwh:
+          parsed.consumptionKwh.value !== null
+            ? String(parsed.consumptionKwh.value)
+            : coordinateFields.kwh,
       };
 
       setOcrText(extractedPdf.text);
       setOcrFields(extracted);
       setForm((current) => ({ ...current, ...extracted }));
 
-      if (!parsed.consumptionKwh.value) {
-        setOcrStatus("PDF leído, pero no se pudo validar el consumo. Revisa los datos.");
+      if (!extracted.kwh) {
+        setOcrStatus(
+          "PDF leído, pero no se pudo validar el consumo. Revisa los datos."
+        );
       } else if (parsed.validation.consistent) {
         setOcrStatus(
-          `Factura PDF validada · ${extractedPdf.pages} página · ${parsed.consumptionKwh.value} kWh`
+          `Factura PDF validada · ${extractedPdf.pages} página · ${extracted.kwh} kWh`
         );
       } else {
         setOcrStatus(
-          `Factura PDF leída · ${parsed.consumptionKwh.value} kWh · requiere verificación`
+          `Factura PDF leída · ${extracted.kwh} kWh · requiere verificación`
         );
       }
     } catch {
-      setError("No fue posible leer el PDF. Si es una factura escaneada, puedes usar una fotografía.");
+      setError(
+        "No fue posible leer el PDF. Si es una factura escaneada, puedes usar una fotografía."
+      );
       setOcrStatus("");
     } finally {
       setOcrRunning(false);
