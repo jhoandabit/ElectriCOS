@@ -458,32 +458,19 @@ type InvoiceProvider = "eep" | "epm" | "celsia" | "other";
 function detectInvoiceProvider(text: string, fileName = ""): InvoiceProvider {
   const source = normalizeLoose(text + " " + fileName);
 
-  if (
-    source.includes("energia de pereira") ||
-    source.includes("empresa de energia de pereira") ||
-    source.includes("eepvm05") ||
-    source.split(" ").includes("eep")
-  ) {
+  if (source.includes("energia de pereira") || source.includes("empresa de energia de pereira") || source.includes("eepvm05") || source.split(" ").includes("eep")) {
     return "eep";
   }
 
-  if (
-    source.includes("empresas publicas de medellin") ||
-    source.includes("empresa de servicios publicos de medellin") ||
-    source.split(" ").includes("epm")
-  ) {
+  if (source.includes("empresas publicas de medellin") || source.includes("empresa de servicios publicos de medellin") || source.split(" ").includes("epm")) {
     return "epm";
   }
 
-  if (source.includes("celsia")) return "celsia";
-  return "other";
-}
+  if (source.includes("celsia")) {
+    return "celsia";
+  }
 
-function invoiceProviderLabel(provider: InvoiceProvider) {
-  if (provider === "eep") return "Energía de Pereira";
-  if (provider === "epm") return "EPM";
-  if (provider === "celsia") return "Celsia";
-  return "Otro proveedor";
+  return "other";
 }
 
 function numberCandidates(text: string) {
@@ -798,8 +785,7 @@ export default function Home() {
       const extractedPdf = await extractInvoicePdf(file);
       const extracted = extractStructuredPdfData(extractedPdf.text, extractedPdf.items);
 
-      const provider = detectInvoiceProvider(extractedPdf.text, file.name);
-      setOcrProvider(provider);
+      setOcrProvider(detectInvoiceProvider(extractedPdf.text, file.name));
       setOcrText(extractedPdf.text);
       setOcrFields(extracted);
       setForm((current) => ({ ...current, ...extracted }));
@@ -932,8 +918,7 @@ export default function Home() {
       results.sort((a, b) => b.score - a.score);
       const best = results[0];
 
-      const provider = detectInvoiceProvider(best.text, fileToProcess.name);
-      setOcrProvider(provider);
+      setOcrProvider(detectInvoiceProvider(best.text, fileToProcess.name));
       setOcrText(best.text);
       setOcrFields(best.extracted);
       setForm((current) => ({ ...current, ...best.extracted }));
@@ -1015,8 +1000,7 @@ export default function Home() {
             {!ocrRunning && ocrStatus && (
               <div className="ocr-status">
                 <strong>{ocrStatus}</strong>
-                <span>Empresa detectada: <b>{invoiceProviderLabel(ocrProvider)}</b></span>
-                {ocrFields.kwh && <span>Consumo detectado: <b>{ocrFields.kwh} kWh</b></span>
+                {ocrFields.kwh && <span>Consumo detectado: <b>{ocrFields.kwh} kWh</b></span>}
               </div>
             )}
 
