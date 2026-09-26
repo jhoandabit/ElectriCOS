@@ -288,204 +288,279 @@ function extractReadingFromText(text: string) {
   return null;
 }
 
-function extractTariffConsumption(text: string) {
-  const normalized = normalizeInvoiceFieldText(text);
+type PdfRow = {
+  y: number;
+  items: PdfTextItem[];
+  text: string;
+  normalized: string;
+};
 
-  // En facturas de energía, el consumo de cada franja aparece junto al
-  // valor unitario del kWh. No dependemos del título de la tabla porque
-  // PDF.js puede alterar el orden de los fragmentos de texto.
-  const ratePattern = /\b\d{3}[.,]\d{4}\b/g;
-  const rates = Array.from(normalized.matchAll(ratePattern));
+function buildPdfRows(items: PdfTextItem[], tolerance = 2.5): PdfRow[] {
+  const rows: PdfRow[] = [];
 
-  const values: number[] = [];
+  for (const item of items) {
+    let row = rows.find((candidate) => Math.abs(candidate.y - item.y) <= tolerance);
 
-  for (const rate of rates) {
-    const start = Math.max(0, (rate.index ?? 0) - 90);
-    const context = normalized.slice(start, rate.index ?? start);
-
-    const candidates = Array.from(
-      context.matchAll(/\b(\d{2,4})\b/g)
-    )
-      .map((match) => Number(match[1]))
-      .filter((value) => value >= 20 && value < 2000);
-
-    if (candidates.length) {
-      values.push(candidates[candidates.length - 1]);
+    if (!row) {
+      row = {
+        y: item.y,
+        items: [],
+        text: "",
+        normalized: "",
+      };
+      rows.push(row);
     }
+
+    row.items.push(item);
   }
 
-  const unique = [...new Set(values)];
+  for (const row of rows) {
+    row.items.sort((a, b) => a.x - b.x);
+    row.text = row.items.map((item) => item.text.trim()).filter(Boolean).join(" ");
+    row.normalized = normalizeLoose(row.text);
+  }
 
-  if (!unique.length) return null;
-
-  // Una misma factura puede tener varias franjas. Sumamos únicamente los
-  // valores que aparecen inmediatamente antes de una tarifa unitaria.
-  return Number(unique.reduce((sum, value) => sum + value, 0).toFixed(2));
+  return rows.sort((a, b) => a.y - b.y);
 }
 
-function extractReadingForConsumption(text: string, targetKwh: number) {
-  if (!Number.isFinite(targetKwh) || targetKwh <= 0) return null;
+function numericToken(value: string) {
+  const cleaned = value.replace(/[^0-9.,-]/g, "");
+  if (!cleaned) return null;
+  return parseNumber(cleaned);
+}
 
-  const tokens = Array.from(
-    text.matchAll(/\b\d{1,6}(?:[.,]\d{1,2})?\b/g)
-  ).map((match) => ({
-    value: parseNumber(match[0]),
-    index: match.index ?? 0,
-  }));
+function extractPdfMeterReadings(rows: PdfRow[]) {
+  // En la factura de Energía de Pereira la fila del medidor contiene:
+  // GNS 19840 19487 353 1 353 267
+  // Los dos primeros enteros de 4-6 dígitos después de GNS son
+  // lectura actual y lectura anterior.
+  const gnsRow = rows.find((row) => /\bgns\b/i.test(row.normalized));
 
-  const readings = tokens
+  if (!gnsRow) return null;
+
+  const gnsIndex = gnsRow.items.findIndex((item) => /^gns$/i.test(normalizeLoose(item.text)));
+  const numbers = gnsRow.items
+    .filter((item, index) => index > gnsIndex)
+    .map((item) => ({
+      item,
+      value: numericToken(item.text),
+    }))
     .filter(
-      (token) =>
-        token.value !== null &&
-        Number.isInteger(token.value) &&
-        token.value >= 1000 &&
-        token.value <= 999999
-    )
-    .map((token) => ({ value: token.value as number, index: token.index }));
+      (entry): entry is { item: PdfTextItem; value: number } =>
+        entry.value !== null &&
+        Number.isInteger(entry.value) &&
+        entry.value >= 1000 &&
+        entry.value <= 999999
+    );
 
-  let best: { previous: number; current: number; distance: number } | null = null;
+  if (numbers.length < 2) return null;
 
-  for (const a of readings) {
-    for (const b of readings) {
-      if (a.value === b.value) continue;
+  const current = numbers[0].value;
+  const previous = numbers[1].value;
+  const consumption = current - previous;
 
-      const previous = Math.min(a.value, b.value);
-      const current = Math.max(a.value, b.value);
-      const difference = current - previous;
+  if (consumption <= 0 || consumption >= 2000) return null;
 
-      if (difference !== targetKwh) continue;
+  return {
+    previous: String(previous),
+    current: String(current),
+    kwh: String(consumption),
+  };
+}
 
-      const distance = Math.abs(a.index - b.index);
+function extractPdfTariffConsumption(rows: PdfRow[]) {
+  const consumptionValues: number[] = [];
 
-      if (!best || distance < best.distance) {
-        best = { previous, current, distance };
+  for (const row of rows) {
+    const rateItems = row.items.filter((item) =>
+      /^\d{3}[.,]\d{4}$/.test(item.text.trim())
+    );
+
+    for (const rateItem of rateItems) {
+      // El consumo de cada franja está a la izquierda inmediata del valor
+      // unitario. Esto evita sumar valores monetarios, históricos o lecturas
+      // que estén en otras zonas de la factura.
+      const candidates = row.items
+        .filter((item) => {
+          if (item.x >= rateItem.x) return false;
+
+          const distance = rateItem.x - item.x;
+          if (distance > 105) return false;
+
+          return /^\d{2,4}$/.test(item.text.trim());
+        })
+        .map((item) => ({
+          item,
+          value: Number(item.text.trim()),
+          distance: rateItem.x - item.x,
+        }))
+        .filter((entry) => entry.value >= 20 && entry.value < 2000)
+        .sort((a, b) => a.distance - b.distance);
+
+      if (candidates.length) {
+        consumptionValues.push(candidates[0].value);
       }
     }
   }
 
-  if (!best) return null;
+  const unique = [...new Set(consumptionValues)];
 
-  return {
-    previous: String(best.previous),
-    current: String(best.current),
-    kwh: String(targetKwh),
-  };
+  if (!unique.length) return null;
+
+  return Number(unique.reduce((sum, value) => sum + value, 0).toFixed(2));
+}
+
+function extractPdfBasicFields(rows: PdfRow[], text: string): Partial<FormState> {
+  const result: Partial<FormState> = {};
+
+  // MUNICIPIO:
+  // Ejemplo real: "147 Cartago Residencial 108"
+  const serviceRow = rows.find(
+    (row) =>
+      /\bresidencial\b/i.test(row.normalized) &&
+      /\bcartago\b/i.test(row.normalized)
+  );
+
+  if (serviceRow) {
+    const match = serviceRow.text.match(
+      /\b\d{1,4}\s+([A-Za-zÁÉÍÓÚáéíóúÑñ]{3,30})\s+residencial\b/i
+    );
+
+    if (match) {
+      result.municipality = match[1].trim();
+    }
+  }
+
+  if (!result.municipality) {
+    const municipalityMatch = text.match(
+      /\bmunicipio\s*(?:de)?\s*[:\-]?\s*([A-Za-zÁÉÍÓÚáéíóúÑñ]{3,30})/i
+    );
+
+    if (municipalityMatch) {
+      result.municipality = municipalityMatch[1].trim();
+    }
+  }
+
+  // ESTRATO:
+  // En la factura EEP aparece como "CT0172 4".
+  const estratoRow = rows.find((row) => /\bct\d+\b/i.test(row.normalized));
+
+  if (estratoRow) {
+    const match = estratoRow.text.match(/\bct\d+\b[\s\S]*?\b([1-6])\b/i);
+    if (match) result.estrato = match[1];
+  }
+
+  if (!result.estrato) {
+    const match = text.match(/\bestrato\s*[:.]?\s*([1-6])\b/i);
+    if (match) result.estrato = match[1];
+  }
+
+  // PERIODO Y DÍAS:
+  // Ejemplo real: "14/AGO/2026 - 10/SEP/2026 28"
+  const periodRow = rows.find((row) =>
+    /\b\d{1,2}\/[A-Za-z]{3,10}\/\d{4}\b.*\b\d{1,2}\b/.test(row.text)
+  );
+
+  if (periodRow) {
+    const match = periodRow.text.match(
+      /(\d{1,2})\/([A-Za-z]{3,10})\/(\d{4})\s*[-–]\s*(\d{1,2})\/([A-Za-z]{3,10})\/(\d{4})\s+(\d{1,3})\b/i
+    );
+
+    if (match) {
+      const monthMap: Record<string, string> = {
+        ene: "01", enero: "01",
+        feb: "02", febrero: "02",
+        mar: "03", marzo: "03",
+        abr: "04", abril: "04",
+        may: "05", mayo: "05",
+        jun: "06", junio: "06",
+        jul: "07", julio: "07",
+        ago: "08", agosto: "08",
+        sep: "09", septiembre: "09",
+        oct: "10", octubre: "10",
+        nov: "11", noviembre: "11",
+        dic: "12", diciembre: "12",
+      };
+
+      const month = monthMap[match[2].toLowerCase()];
+      if (month) {
+        result.period = match[3] + "-" + month;
+      }
+
+      result.days = match[7];
+    }
+  }
+
+  if (!result.period) {
+    const fallback = text.match(
+      /periodo[\s\S]{0,100}?(\d{1,2})\s*[/\-]\s*([A-Za-z]{3,10})\s*[/\-]\s*(\d{4})/i
+    );
+
+    if (fallback) {
+      const monthMap: Record<string, string> = {
+        ene: "01", enero: "01",
+        feb: "02", febrero: "02",
+        mar: "03", marzo: "03",
+        abr: "04", abril: "04",
+        may: "05", mayo: "05",
+        jun: "06", junio: "06",
+        jul: "07", julio: "07",
+        ago: "08", agosto: "08",
+        sep: "09", septiembre: "09",
+        oct: "10", octubre: "10",
+        nov: "11", noviembre: "11",
+        dic: "12", diciembre: "12",
+      };
+
+      const month = monthMap[fallback[2].toLowerCase()];
+      if (month) result.period = fallback[3] + "-" + month;
+    }
+  }
+
+  return result;
 }
 
 function extractStructuredPdfData(
   text: string,
   items: PdfTextItem[] = []
 ): Partial<FormState> {
-  const clean = normalizeInvoiceFieldText(text);
-  const result: Partial<FormState> = {};
+  const result = extractPdfBasicFields(
+    buildPdfRows(items),
+    text
+  );
 
-  const municipality =
-    clean.match(
-      /municipio\s*[:\-]?\s*(?:\d{1,4}\s+)?([A-Za-zÁÉÍÓÚáéíóúÑñ]{3,30})(?=\s*[-:]?\s*servicio|\s+ciclo|$)/i
-    ) ||
-    clean.match(
-      /municipio\s*[:\-]?\s*(?:\d{1,4}\s+)?([A-Za-zÁÉÍÓÚáéíóúÑñ]{3,30})/i
-    );
+  const rows = buildPdfRows(items);
 
-  if (municipality) {
-    result.municipality = municipality[1].trim();
-  } else if (items.length) {
-    const nearby = nearbyPdfTextFlexible(items, /^municipio$/);
-    const match = nearby.match(/(?:\d{1,4}\s+)?([A-Za-zÁÉÍÓÚáéíóúÑñ]{3,30})/i);
-    if (match) result.municipality = match[1].trim();
-  }
+  // FUENTE 1: tabla de liquidación por franjas.
+  const tariffKwh = extractPdfTariffConsumption(rows);
 
-  const estrato =
-    clean.match(/(?:estrato|est)\s*[:.]?\s*0?([1-6])\b/i) ||
-    clean.match(/(?:estrato|est)\s+0?([1-6])\b/i);
+  // FUENTE 2: lecturas del medidor.
+  const meter = extractPdfMeterReadings(rows);
 
-  if (estrato) {
-    result.estrato = estrato[1];
-  } else if (items.length) {
-    const nearby = nearbyPdfTextFlexible(items, /^(?:estrato|est)$/);
-    const match = nearby.match(/\b0?([1-6])\b/);
-    if (match) result.estrato = match[1];
-  }
-
-  const days =
-    clean.match(/d[ií]as\s+facturados\s*[:.]?\s*(\d{1,3})\b/i) ||
-    clean.match(/d[ií]as\s+facturados[\s\S]{0,40}?(\d{1,3})\b/i);
-
-  if (days) {
-    result.days = days[1];
-  } else if (items.length) {
-    const nearby = nearbyPdfTextFlexible(items, /^d[ií]as\s+facturados$/);
-    const match = nearby.match(/\b(\d{1,3})\b/);
-    if (match) result.days = match[1];
-  }
-
-  const monthMap: Record<string, string> = {
-    ene: "01", enero: "01",
-    feb: "02", febrero: "02",
-    mar: "03", marzo: "03",
-    abr: "04", abril: "04",
-    may: "05", mayo: "05",
-    jun: "06", junio: "06",
-    jul: "07", julio: "07",
-    ago: "08", agosto: "08",
-    sep: "09", septiembre: "09",
-    oct: "10", octubre: "10",
-    nov: "11", noviembre: "11",
-    dic: "12", diciembre: "12",
-  };
-
-  const periodRange =
-    clean.match(
-      /periodo(?:\s+facturado)?\s*[:.]?\s*(\d{1,2})\s*[/\-]\s*([A-Za-z]{3,10})\s*[/\-]\s*(\d{4})\s*[-–]\s*(\d{1,2})\s*[/\-]\s*([A-Za-z]{3,10})\s*[/\-]\s*(\d{4})/i
-    ) ||
-    clean.match(
-      /periodo(?:\s+facturado)?[\s\S]{0,80}?(\d{1,2})\s*[/\-]\s*([A-Za-z]{3,10})\s*[/\-]\s*(\d{4})/i
-    );
-
-  if (periodRange) {
-    const month = monthMap[periodRange[2].toLowerCase()];
-    const year = periodRange[3];
-    if (month && year) result.period = year + "-" + month;
-  } else {
-    const numericPeriod = clean.match(
-      /periodo(?:\s+facturado)?[\s:]*(\d{4})\s*[-/]\s*(\d{1,2})/i
-    );
-
-    if (numericPeriod) {
-      result.period = numericPeriod[1] + "-" + numericPeriod[2].padStart(2, "0");
-    } else if (items.length) {
-      const nearby = nearbyPdfTextFlexible(items, /^periodo$/i, 55, 700);
-      const date = nearby.match(
-        /(\d{1,2})\s*[/\-]\s*([A-Za-z]{3,10})\s*[/\-]\s*(\d{4})/i
-      );
-
-      if (date) {
-        const month = monthMap[date[2].toLowerCase()];
-        if (month) result.period = date[3] + "-" + month;
-      }
+  // La decisión del consumo se hace con evidencia cruzada:
+  // - si ambas fuentes coinciden, esa es la lectura;
+  // - si solo una existe, se usa esa fuente;
+  // - si difieren, se conserva la lectura de la liquidación, porque es el
+  //   valor explícitamente facturado, y no una resta accidental de otra tabla.
+  if (tariffKwh !== null && meter) {
+    if (tariffKwh === Number(meter.kwh)) {
+      result.kwh = String(tariffKwh);
+      result.previous = meter.previous;
+      result.current = meter.current;
+    } else {
+      result.kwh = String(tariffKwh);
     }
+  } else if (tariffKwh !== null) {
+    result.kwh = String(tariffKwh);
+  } else if (meter) {
+    result.kwh = meter.kwh;
+    result.previous = meter.previous;
+    result.current = meter.current;
   }
 
-  // En un PDF digital, primero tomamos el consumo de la sección
-  // explícita de liquidación. Esto evita que una pareja de números de otra
-  // tabla (por ejemplo 2002 y 2024) produzca falsamente 22 kWh.
-  const tariffConsumption = extractTariffConsumption(clean);
-
-  if (tariffConsumption !== null) {
-    result.kwh = String(tariffConsumption);
-  }
-
-  // Solo aceptamos lecturas si su diferencia coincide exactamente con el
-  // consumo ya identificado en la liquidación. Así 2002 -> 2024 no puede
-  // desplazar un consumo real de 353 kWh.
-  if (result.kwh) {
-    const validatedReading = extractReadingForConsumption(clean, Number(result.kwh));
-    if (validatedReading) {
-      result.previous = validatedReading.previous;
-      result.current = validatedReading.current;
-    }
-  } else {
-    const reading = extractReadingFromText(clean);
+  // Último respaldo: únicamente si no hubo evidencia estructurada.
+  if (!result.kwh) {
+    const reading = extractReadingFromText(normalizeInvoiceFieldText(text));
     if (reading) Object.assign(result, reading);
   }
 
