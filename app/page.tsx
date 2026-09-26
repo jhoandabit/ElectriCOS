@@ -689,6 +689,7 @@ type OcrWord = {
   height: number;
   text: string;
   confidence: number;
+  value?: number;
 };
 
 function parseOcrWords(tsv: string): OcrWord[] {
