@@ -473,6 +473,13 @@ function detectInvoiceProvider(text: string, fileName = ""): InvoiceProvider {
   return "other";
 }
 
+function invoiceProviderLabel(provider: InvoiceProvider) {
+  if (provider === "eep") return "Energía de Pereira";
+  if (provider === "epm") return "EPM";
+  if (provider === "celsia") return "Celsia";
+  return "Otro proveedor";
+}
+
 function numberCandidates(text: string) {
   const matches = text.match(/\b\d{1,4}(?:[.,]\d{1,3})?\b/g) ?? [];
   return matches
