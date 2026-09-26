@@ -10,6 +10,34 @@ export const GENERIC_INVOICE_REGIONS: NonNullable<InvoiceTemplate["regions"]> = 
 
 export const INVOICE_TEMPLATES: InvoiceTemplate[] = [
   {
+    id: "celsia",
+    name: "Celsia",
+    aliases: [
+      "celsia",
+      "celsia energia",
+      "celsia colombia",
+    ],
+    anchors: [
+      "consumo de energia",
+      "componentes de la formula tarifaria",
+      "valor del kwh",
+      "consumo de los ultimos 6 meses",
+      "historico de consumo",
+    ],
+    fieldHints: {
+      municipality: ["municipio"],
+      stratum: ["estrato"],
+      billingPeriod: ["periodo de facturacion", "periodo"],
+      billingDays: ["dias facturados", "dias de consumo"],
+      previousReading: ["lectura anterior"],
+      currentReading: ["lectura actual"],
+      consumptionKwh: ["consumo", "kwh"],
+      averageKwh: ["promedio"],
+      tariffValue: ["valor del kwh", "costo unitario", "cu"],
+      invoiceNumber: ["factura", "cuenta", "contrato"],
+    },
+  },
+  {
     id: "epm",
     name: "EPM",
     aliases: [
