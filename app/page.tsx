@@ -453,6 +453,54 @@ function normalizeOcrText(text: string) {
     .trim();
 }
 
+type InvoiceProvider = "eep" | "epm" | "celsia" | "other";
+
+function detectInvoiceProvider(text: string, fileName = ""): InvoiceProvider {
+  const source = normalizeLoose(
+    text + " " + fileName
+  );
+
+  if (
+    source.includes("energia de pereira") ||
+    source.includes("empresa de energia de pereira") ||
+    /\\beep\\b/.test(source) ||
+    source.includes("eepvm05")
+  ) {
+    return "eep";
+  }
+
+  if (
+    source.includes("empresas publicas de medellin") ||
+    source.includes("empresa de servicios publicos de medellin") ||
+    /\\bepm\\b/.test(source)
+  ) {
+    return "epm";
+  }
+
+  if (
+    source.includes("celsia") ||
+    source.includes("celsia energia") ||
+    source.includes("celsia colombia")
+  ) {
+    return "celsia";
+  }
+
+  return "other";
+}
+
+function invoiceProviderLabel(provider: InvoiceProvider) {
+  switch (provider) {
+    case "eep":
+      return "Energía de Pereira";
+    case "epm":
+      return "EPM";
+    case "celsia":
+      return "Celsia";
+    default:
+      return "Otro proveedor";
+  }
+}
+
 function numberCandidates(text: string) {
   const matches = text.match(/\b\d{1,4}(?:[.,]\d{1,3})?\b/g) ?? [];
   return matches
@@ -680,6 +728,7 @@ export default function Home() {
   const [ocrStatus, setOcrStatus] = useState("");
   const [ocrRunning, setOcrRunning] = useState(false);
   const [ocrFields, setOcrFields] = useState<Partial<FormState>>({});
+  const [ocrProvider, setOcrProvider] = useState<InvoiceProvider>("other");
 
   const set = (key: keyof FormState, value: string) => {
     setForm((f) => ({ ...f, [key]: value }));
@@ -738,6 +787,7 @@ export default function Home() {
     setInvoicePreview(isPdf ? "" : URL.createObjectURL(file));
     setOcrText("");
     setOcrFields({});
+    setOcrProvider("other");
     setOcrStatus(
       isPdf
         ? "Factura PDF seleccionada. Extrayendo datos directamente del documento…"
@@ -757,12 +807,15 @@ export default function Home() {
     setError("");
     setOcrText("");
     setOcrFields({});
+    setOcrProvider("other");
     setOcrStatus("Extrayendo texto y estructura del PDF…");
 
     try {
       const extractedPdf = await extractInvoicePdf(file);
       const extracted = extractStructuredPdfData(extractedPdf.text, extractedPdf.items);
 
+      const provider = detectInvoiceProvider(extractedPdf.text, file.name);
+      setOcrProvider(provider);
       setOcrText(extractedPdf.text);
       setOcrFields(extracted);
       setForm((current) => ({ ...current, ...extracted }));
@@ -895,6 +948,8 @@ export default function Home() {
       results.sort((a, b) => b.score - a.score);
       const best = results[0];
 
+      const provider = detectInvoiceProvider(best.text, file.name);
+      setOcrProvider(provider);
       setOcrText(best.text);
       setOcrFields(best.extracted);
       setForm((current) => ({ ...current, ...best.extracted }));
@@ -976,6 +1031,9 @@ export default function Home() {
             {!ocrRunning && ocrStatus && (
               <div className="ocr-status">
                 <strong>{ocrStatus}</strong>
+                {ocrProvider && (
+                  <span>Empresa detectada: <b>{invoiceProviderLabel(ocrProvider)}</b></span>
+                )}
                 {ocrFields.kwh && <span>Consumo detectado: <b>{ocrFields.kwh} kWh</b></span>}
               </div>
             )}
