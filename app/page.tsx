@@ -1000,7 +1000,14 @@ export default function Home() {
             {!ocrRunning && ocrStatus && (
               <div className="ocr-status">
                 <strong>{ocrStatus}</strong>
-                {ocrFields.kwh && <span>Consumo detectado: <b>{ocrFields.kwh} kWh</b></span>}
+                <span>
+                  Empresa detectada: <b>{invoiceProviderLabel(ocrProvider)}</b>
+                </span>
+                {ocrFields.kwh && (
+                  <span>
+                    Consumo detectado: <b>{ocrFields.kwh} kWh</b>
+                  </span>
+                )}
               </div>
             )}
 
