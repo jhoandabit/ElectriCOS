@@ -288,6 +288,41 @@ function extractReadingFromText(text: string) {
   return null;
 }
 
+function extractTariffConsumption(text: string) {
+  const normalized = normalizeInvoiceFieldText(text);
+
+  // En facturas de energía, el consumo de cada franja aparece junto al
+  // valor unitario del kWh. No dependemos del título de la tabla porque
+  // PDF.js puede alterar el orden de los fragmentos de texto.
+  const ratePattern = /\b\d{3}[.,]\d{4}\b/g;
+  const rates = Array.from(normalized.matchAll(ratePattern));
+
+  const values: number[] = [];
+
+  for (const rate of rates) {
+    const start = Math.max(0, (rate.index ?? 0) - 90);
+    const context = normalized.slice(start, rate.index ?? start);
+
+    const candidates = Array.from(
+      context.matchAll(/\b(\d{2,4})\b/g)
+    )
+      .map((match) => Number(match[1]))
+      .filter((value) => value >= 20 && value < 2000);
+
+    if (candidates.length) {
+      values.push(candidates[candidates.length - 1]);
+    }
+  }
+
+  const unique = [...new Set(values)];
+
+  if (!unique.length) return null;
+
+  // Una misma factura puede tener varias franjas. Sumamos únicamente los
+  // valores que aparecen inmediatamente antes de una tarifa unitaria.
+  return Number(unique.reduce((sum, value) => sum + value, 0).toFixed(2));
+}
+
 function extractReadingForConsumption(text: string, targetKwh: number) {
   if (!Number.isFinite(targetKwh) || targetKwh <= 0) return null;
 
@@ -434,29 +469,10 @@ function extractStructuredPdfData(
   // En un PDF digital, primero tomamos el consumo de la sección
   // explícita de liquidación. Esto evita que una pareja de números de otra
   // tabla (por ejemplo 2002 y 2024) produzca falsamente 22 kWh.
-  const liquidationIndex = clean.search(/liquidaci[oó]n\s+del\s+consumo\s+actual/i);
-  const liquidation = liquidationIndex >= 0
-    ? clean.slice(liquidationIndex, liquidationIndex + 2200)
-    : "";
+  const tariffConsumption = extractTariffConsumption(clean);
 
-  if (liquidation) {
-    const candidates = Array.from(
-      liquidation.matchAll(/(?:^|\s)(\d{2,4}(?:[.,]\d{1,2})?)(?=\s+(?:9\d{2}\.\d{4}|\d{5,6}))/g)
-    )
-      .map((match) => parseNumber(match[1]))
-      .filter((value): value is number =>
-        value !== null && value >= 20 && value < 2000
-      );
-
-    const unique = [...new Set(candidates)];
-
-    if (unique.length >= 2) {
-      result.kwh = String(
-        Number(unique.slice(0, 2).reduce((sum, value) => sum + value, 0).toFixed(2))
-      );
-    } else if (unique.length === 1) {
-      result.kwh = String(unique[0]);
-    }
+  if (tariffConsumption !== null) {
+    result.kwh = String(tariffConsumption);
   }
 
   // Solo aceptamos lecturas si su diferencia coincide exactamente con el
