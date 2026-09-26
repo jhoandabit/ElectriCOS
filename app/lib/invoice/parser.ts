@@ -260,13 +260,22 @@ export function parseInvoiceText(
   ];
 
   if (history.currentKwh !== null) {
-    consumptionEvidence.push({
-      source: "history-current",
-      value: history.currentKwh,
-      score: 30,
-      reason: "Valor encontrado junto a Actual/ACT.",
-    });
+    const matchesReading =
+      readings.consumption.value !== null &&
+      Math.abs(history.currentKwh - readings.consumption.value) < 0.01;
 
+    if (matchesReading) {
+      consumptionEvidence.push({
+        source: "history-current",
+        value: history.currentKwh,
+        score: 30,
+        reason: "Valor encontrado junto a Actual/ACT y coincidente con las lecturas.",
+      });
+    }
+
+    // "Actual" aparece en algunas facturas también dentro de la tabla de
+    // días facturados. Solo lo usamos como consumo cuando coincide con una
+    // evidencia energética independiente.
     if (consumptionValue === null) {
       consumptionValue = history.currentKwh;
     }
