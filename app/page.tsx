@@ -456,14 +456,12 @@ function normalizeOcrText(text: string) {
 type InvoiceProvider = "eep" | "epm" | "celsia" | "other";
 
 function detectInvoiceProvider(text: string, fileName = ""): InvoiceProvider {
-  const source = normalizeLoose(
-    text + " " + fileName
-  );
+  const source = normalizeLoose(text + " " + fileName);
 
   if (
     source.includes("energia de pereira") ||
     source.includes("empresa de energia de pereira") ||
-    .test(source) ||
+    /\beep\b/.test(source) ||
     source.includes("eepvm05")
   ) {
     return "eep";
@@ -472,7 +470,7 @@ function detectInvoiceProvider(text: string, fileName = ""): InvoiceProvider {
   if (
     source.includes("empresas publicas de medellin") ||
     source.includes("empresa de servicios publicos de medellin") ||
-    .test(source)
+    /\bepm\b/.test(source)
   ) {
     return "epm";
   }
