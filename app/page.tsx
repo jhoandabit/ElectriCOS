@@ -181,6 +181,41 @@ function normalizeLoose(value: string) {
     .trim();
 }
 
+function nearbyPdfTextFlexible(
+  items: PdfTextItem[],
+  labelPattern: RegExp,
+  maxYDistance = 55,
+  maxXDistance = 700
+) {
+  const label = items.find((item) => labelPattern.test(normalizeLoose(item.text)));
+  if (!label) return "";
+
+  const candidates = items
+    .filter((item) => {
+      if (item === label) return false;
+
+      const yDistance = Math.abs(item.y - label.y);
+      const rightDistance = item.x - (label.x + label.width);
+      const sameRow = yDistance <= maxYDistance && rightDistance >= -20 && rightDistance <= maxXDistance;
+
+      const belowDistance = label.y - item.y;
+      const sameColumn = belowDistance >= -5 && belowDistance <= maxYDistance && Math.abs(item.x - label.x) <= maxXDistance;
+
+      return sameRow || sameColumn;
+    })
+    .sort((a, b) => {
+      const da = Math.abs(a.y - label.y) + Math.max(0, -(a.x - label.x));
+      const db = Math.abs(b.y - label.y) + Math.max(0, -(b.x - label.x));
+      return da - db;
+    });
+
+  return candidates
+    .slice(0, 8)
+    .map((item) => item.text)
+    .join(" ")
+    .trim();
+}
+
 function nearbyPdfText(
   items: PdfTextItem[],
   labelPattern: RegExp,
@@ -271,7 +306,7 @@ function extractStructuredPdfData(
   if (municipality) {
     result.municipality = municipality[1].trim();
   } else if (items.length) {
-    const nearby = nearbyPdfText(items, /^municipio$/);
+    const nearby = nearbyPdfTextFlexible(items, /^municipio$/);
     const match = nearby.match(/(?:\d{1,4}\s+)?([A-Za-zÁÉÍÓÚáéíóúÑñ]{3,30})/i);
     if (match) result.municipality = match[1].trim();
   }
@@ -283,7 +318,7 @@ function extractStructuredPdfData(
   if (estrato) {
     result.estrato = estrato[1];
   } else if (items.length) {
-    const nearby = nearbyPdfText(items, /^(?:estrato|est)$/);
+    const nearby = nearbyPdfTextFlexible(items, /^(?:estrato|est)$/);
     const match = nearby.match(/\b0?([1-6])\b/);
     if (match) result.estrato = match[1];
   }
@@ -295,7 +330,7 @@ function extractStructuredPdfData(
   if (days) {
     result.days = days[1];
   } else if (items.length) {
-    const nearby = nearbyPdfText(items, /^d[ií]as\s+facturados$/);
+    const nearby = nearbyPdfTextFlexible(items, /^d[ií]as\s+facturados$/);
     const match = nearby.match(/\b(\d{1,3})\b/);
     if (match) result.days = match[1];
   }
@@ -335,7 +370,7 @@ function extractStructuredPdfData(
     if (numericPeriod) {
       result.period = numericPeriod[1] + "-" + numericPeriod[2].padStart(2, "0");
     } else if (items.length) {
-      const nearby = nearbyPdfText(items, /^periodo$/i, 42, 500);
+      const nearby = nearbyPdfTextFlexible(items, /^periodo$/i, 55, 700);
       const date = nearby.match(
         /(\d{1,2})\s*[/\-]\s*([A-Za-z]{3,10})\s*[/\-]\s*(\d{4})/i
       );
