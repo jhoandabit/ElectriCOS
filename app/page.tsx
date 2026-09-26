@@ -1,8 +1,6 @@
 "use client";
 
 import { ChangeEvent, FormEvent, useMemo, useState } from "react";
-import { parseInvoiceText } from "./lib/invoice/parser";
-import { GENERIC_INVOICE_REGIONS, getInvoiceTemplate, identifyInvoiceProvider } from "./lib/invoice/templates";
 
 type Screen = "home" | "manual" | "invoice";
 type FormState = {
@@ -125,164 +123,6 @@ function preprocessInvoiceImage(file: File, mode: "gray" | "binary" | "original"
   });
 }
 
-
-const ELECTRICOS_INVOICE_REGIONS = getInvoiceTemplate("eep")?.regions ?? GENERIC_INVOICE_REGIONS;
-
-async function preprocessInvoiceImageDetailed(
-  file: File,
-  mode: "gray" | "binary" | "original"
-) {
-  return new Promise<{ blob: Blob; width: number; height: number }>((resolve, reject) => {
-    const image = new Image();
-    const objectUrl = URL.createObjectURL(file);
-
-    image.onload = () => {
-      URL.revokeObjectURL(objectUrl);
-
-      const maxWidth = 3200;
-      const scale = Math.min(1.8, maxWidth / image.naturalWidth);
-      const width = Math.max(1200, Math.round(image.naturalWidth * scale));
-      const height = Math.round(image.naturalHeight * (width / image.naturalWidth));
-
-      const canvas = document.createElement("canvas");
-      canvas.width = width;
-      canvas.height = height;
-
-      const context = canvas.getContext("2d", { willReadFrequently: true });
-      if (!context) {
-        reject(new Error("No se pudo preparar la imagen."));
-        return;
-      }
-
-      context.imageSmoothingEnabled = true;
-      context.imageSmoothingQuality = "high";
-      context.drawImage(image, 0, 0, width, height);
-
-      const imageData = context.getImageData(0, 0, width, height);
-      const data = imageData.data;
-
-      let sum = 0;
-      const luminance = new Uint8Array(width * height);
-
-      for (let i = 0, p = 0; i < data.length; i += 4, p++) {
-        const y =
-          0.299 * data[i] +
-          0.587 * data[i + 1] +
-          0.114 * data[i + 2];
-
-        luminance[p] = Math.round(y);
-        sum += y;
-      }
-
-      const mean = sum / luminance.length;
-
-      for (let i = 0, p = 0; i < data.length; i += 4, p++) {
-        let y = luminance[p];
-
-        if (mode === "gray") {
-          y = Math.max(0, Math.min(255, Math.round((y - mean) * 1.65 + 128)));
-          data[i] = y;
-          data[i + 1] = y;
-          data[i + 2] = y;
-          data[i + 3] = 255;
-        } else if (mode === "binary") {
-          y = luminance[p] < mean - 8 ? 0 : 255;
-          data[i] = y;
-          data[i + 1] = y;
-          data[i + 2] = y;
-          data[i + 3] = 255;
-        }
-      }
-
-      context.putImageData(imageData, 0, 0);
-
-      canvas.toBlob(
-        (blob) => {
-          if (blob) resolve({ blob, width, height });
-          else reject(new Error("No se pudo generar la imagen procesada."));
-        },
-        "image/jpeg",
-        0.95
-      );
-    };
-
-    image.onerror = () => {
-      URL.revokeObjectURL(objectUrl);
-      reject(new Error("No se pudo abrir la imagen."));
-    };
-
-    image.src = objectUrl;
-  });
-}
-
-function hasUsefulInvoiceFields(fields: Partial<FormState>) {
-  return Boolean(
-    fields.municipality &&
-    fields.estrato &&
-    fields.period &&
-    fields.days &&
-    fields.previous &&
-    fields.current &&
-    fields.kwh
-  );
-}
-
-function scoreExtractedFields(fields: Partial<FormState>) {
-  let score = 0;
-
-  if (fields.municipality) score += 20;
-  if (fields.estrato) score += 15;
-  if (fields.period) score += 20;
-  if (fields.days) score += 15;
-  if (fields.previous && fields.current) score += 20;
-  if (fields.kwh) score += 30;
-
-  if (
-    fields.previous &&
-    fields.current &&
-    fields.kwh &&
-    Number(fields.current) - Number(fields.previous) === Number(fields.kwh)
-  ) {
-    score += 80;
-  }
-
-  return score;
-}
-
-function mergeInvoiceFields(
-  current: Partial<FormState>,
-  candidate: Partial<FormState>
-) {
-  const merged = { ...current };
-
-  for (const key of [
-    "municipality",
-    "estrato",
-    "period",
-    "days",
-    "previous",
-    "current",
-    "kwh",
-  ] as const) {
-    if (!merged[key] && candidate[key]) {
-      merged[key] = candidate[key];
-    }
-  }
-
-  if (
-    candidate.previous &&
-    candidate.current &&
-    candidate.kwh &&
-    Number(candidate.current) - Number(candidate.previous) === Number(candidate.kwh)
-  ) {
-    merged.previous = candidate.previous;
-    merged.current = candidate.current;
-    merged.kwh = candidate.kwh;
-  }
-
-  return merged;
-}
-
 function scoreOcrText(text: string, confidence: number) {
   const normalized = text.toLowerCase();
   let score = confidence || 0;
@@ -369,47 +209,6 @@ function nearbyPdfText(
     .join(" ");
 }
 
-function pdfRowsNearLabel(
-  items: PdfTextItem[],
-  labelPattern: RegExp,
-  rowTolerance = 4
-) {
-  const ordered = [...items].sort((a, b) => {
-    const yDiff = Math.abs(b.y - a.y);
-    return yDiff > rowTolerance ? b.y - a.y : a.x - b.x;
-  });
-
-  const rows: Array<{ y: number; items: PdfTextItem[] }> = [];
-
-  for (const item of ordered) {
-    const row = rows.find((candidate) => Math.abs(candidate.y - item.y) <= rowTolerance);
-    if (row) {
-      row.items.push(item);
-    } else {
-      rows.push({ y: item.y, items: [item] });
-    }
-  }
-
-  for (const row of rows) {
-    const rowItems = [...row.items].sort((a, b) => a.x - b.x);
-    const rowText = rowItems.map((item) => item.text).join(" ");
-    if (labelPattern.test(normalizeLoose(rowText))) {
-      const rowIndex = rows.indexOf(row);
-      return rows
-        .slice(Math.max(0, rowIndex - 1), Math.min(rows.length, rowIndex + 4))
-        .map((candidate) =>
-          [...candidate.items]
-            .sort((a, b) => a.x - b.x)
-            .map((item) => item.text)
-            .join(" ")
-        )
-        .join("\n");
-    }
-  }
-
-  return "";
-}
-
 function extractReadingFromText(text: string) {
   const tokens = Array.from(
     text.matchAll(/\b\d{1,6}(?:[.,]\d{1,2})?\b/g)
@@ -461,46 +260,44 @@ function extractStructuredPdfData(
   const clean = normalizeInvoiceFieldText(text);
   const result: Partial<FormState> = {};
 
-  const municipalityText = items.length
-    ? pdfRowsNearLabel(items, /^municipio/)
-    : "";
-
   const municipality =
     clean.match(
-      /municipio\s*[:\-]?\s*(?:\d{1,4}\s+)?([A-Za-z]{3,30})(?=\s*[-:]?\s*servicio|\s+ciclo|$)/i
+      /municipio\s*[:\-]?\s*(?:\d{1,4}\s+)?([A-Za-zÁÉÍÓÚáéíóúÑñ]{3,30})(?=\s*[-:]?\s*servicio|\s+ciclo|$)/i
     ) ||
-    municipalityText.match(
-      /municipio\s*[:\-]?\s*(?:\d{1,4}\s+)?([A-Za-z]{3,30})(?=\s*[-:]?\s*servicio|\s+ciclo|\s|$)/i
+    clean.match(
+      /municipio\s*[:\-]?\s*(?:\d{1,4}\s+)?([A-Za-zÁÉÍÓÚáéíóúÑñ]{3,30})/i
     );
 
   if (municipality) {
     result.municipality = municipality[1].trim();
+  } else if (items.length) {
+    const nearby = nearbyPdfText(items, /^municipio$/);
+    const match = nearby.match(/(?:\d{1,4}\s+)?([A-Za-zÁÉÍÓÚáéíóúÑñ]{3,30})/i);
+    if (match) result.municipality = match[1].trim();
   }
-
-  const estratoText = items.length
-    ? pdfRowsNearLabel(items, /^(?:estrato|est)\b/)
-    : "";
 
   const estrato =
     clean.match(/(?:estrato|est)\s*[:.]?\s*0?([1-6])\b/i) ||
-    estratoText.match(/(?:estrato|est)\s*[:.]?\s*0?([1-6])\b/i);
+    clean.match(/(?:estrato|est)\s+0?([1-6])\b/i);
 
   if (estrato) {
     result.estrato = estrato[1];
+  } else if (items.length) {
+    const nearby = nearbyPdfText(items, /^(?:estrato|est)$/);
+    const match = nearby.match(/\b0?([1-6])\b/);
+    if (match) result.estrato = match[1];
   }
-
-  const daysText = items.length
-    ? pdfRowsNearLabel(items, /^d[ií]as\s+facturados/)
-    : "";
 
   const days =
     clean.match(/d[ií]as\s+facturados\s*[:.]?\s*(\d{1,3})\b/i) ||
-    daysText.match(/d[ií]as\s+facturados\s*[:.]?\s*(\d{1,3})\b/i) ||
-    daysText.match(/(?:^|\s)(\d{1,3})\s*$/m);
+    clean.match(/d[ií]as\s+facturados[\s\S]{0,40}?(\d{1,3})\b/i);
 
   if (days) {
-    const value = Number(days[1]);
-    if (value >= 1 && value <= 120) result.days = days[1];
+    result.days = days[1];
+  } else if (items.length) {
+    const nearby = nearbyPdfText(items, /^d[ií]as\s+facturados$/);
+    const match = nearby.match(/\b(\d{1,3})\b/);
+    if (match) result.days = match[1];
   }
 
   const monthMap: Record<string, string> = {
@@ -518,33 +315,35 @@ function extractStructuredPdfData(
     dic: "12", diciembre: "12",
   };
 
-  const periodText = items.length
-    ? pdfRowsNearLabel(items, /^periodo(?:\s+facturado)?/)
-    : "";
-
-  const periodSource = clean + "\n" + periodText;
-
-  const periodRange = periodSource.match(
-    /periodo(?:\s+facturado)?\s*[:.]?\s*(\d{1,2})\s*[/\-]\s*([A-Za-z]{3,10})\s*[/\-]\s*(\d{4})\s*[-–]\s*(\d{1,2})\s*[/\-]\s*([A-Za-z]{3,10})\s*[/\-]\s*(\d{4})/i
-  );
-
-  const periodSingle = periodSource.match(
-    /periodo(?:\s+facturado)?[\s:]*(\d{1,2})\s*[/\-]\s*([A-Za-z]{3,10})\s*[/\-]\s*(\d{4})/i
-  );
+  const periodRange =
+    clean.match(
+      /periodo(?:\s+facturado)?\s*[:.]?\s*(\d{1,2})\s*[/\-]\s*([A-Za-z]{3,10})\s*[/\-]\s*(\d{4})\s*[-–]\s*(\d{1,2})\s*[/\-]\s*([A-Za-z]{3,10})\s*[/\-]\s*(\d{4})/i
+    ) ||
+    clean.match(
+      /periodo(?:\s+facturado)?[\s\S]{0,80}?(\d{1,2})\s*[/\-]\s*([A-Za-z]{3,10})\s*[/\-]\s*(\d{4})/i
+    );
 
   if (periodRange) {
     const month = monthMap[periodRange[2].toLowerCase()];
-    if (month) result.period = periodRange[3] + "-" + month;
-  } else if (periodSingle) {
-    const month = monthMap[periodSingle[2].toLowerCase()];
-    if (month) result.period = periodSingle[3] + "-" + month;
+    const year = periodRange[3];
+    if (month && year) result.period = year + "-" + month;
   } else {
-    const numericPeriod = periodSource.match(
+    const numericPeriod = clean.match(
       /periodo(?:\s+facturado)?[\s:]*(\d{4})\s*[-/]\s*(\d{1,2})/i
     );
 
     if (numericPeriod) {
       result.period = numericPeriod[1] + "-" + numericPeriod[2].padStart(2, "0");
+    } else if (items.length) {
+      const nearby = nearbyPdfText(items, /^periodo$/i, 42, 500);
+      const date = nearby.match(
+        /(\d{1,2})\s*[/\-]\s*([A-Za-z]{3,10})\s*[/\-]\s*(\d{4})/i
+      );
+
+      if (date) {
+        const month = monthMap[date[2].toLowerCase()];
+        if (month) result.period = date[3] + "-" + month;
+      }
     }
   }
 
@@ -962,70 +761,19 @@ export default function Home() {
 
     try {
       const extractedPdf = await extractInvoicePdf(file);
-
-      // El parser semántico trabaja sobre el texto completo y es común a
-      // cualquier comercializador. Para PDF digital conservamos además la
-      // lectura por coordenadas, porque algunos documentos separan la etiqueta
-      // ("Periodo facturado", "Días facturados", etc.) del valor en objetos
-      // gráficos distintos.
-      const parsed = parseInvoiceText(extractedPdf.text, "pdf-text");
-      const coordinateFields = extractStructuredPdfData(
-        extractedPdf.text,
-        extractedPdf.items
-      );
-
-      const extracted: Partial<FormState> = {
-        municipality:
-          parsed.municipality.value !== null
-            ? String(parsed.municipality.value)
-            : coordinateFields.municipality,
-        estrato:
-          parsed.stratum.value !== null
-            ? String(parsed.stratum.value)
-            : coordinateFields.estrato,
-        period:
-          parsed.billingPeriod.value !== null
-            ? String(parsed.billingPeriod.value)
-            : coordinateFields.period,
-        days:
-          parsed.billingDays.value !== null
-            ? String(parsed.billingDays.value)
-            : coordinateFields.days,
-        previous:
-          parsed.previousReading.value !== null
-            ? String(parsed.previousReading.value)
-            : coordinateFields.previous,
-        current:
-          parsed.currentReading.value !== null
-            ? String(parsed.currentReading.value)
-            : coordinateFields.current,
-        kwh:
-          parsed.consumptionKwh.value !== null
-            ? String(parsed.consumptionKwh.value)
-            : coordinateFields.kwh,
-      };
+      const extracted = extractStructuredPdfData(extractedPdf.text, extractedPdf.items);
 
       setOcrText(extractedPdf.text);
       setOcrFields(extracted);
       setForm((current) => ({ ...current, ...extracted }));
 
       if (!extracted.kwh) {
-        setOcrStatus(
-          "PDF leído, pero no se pudo validar el consumo. Revisa los datos."
-        );
-      } else if (parsed.validation.consistent) {
-        setOcrStatus(
-          `Factura PDF validada · ${extractedPdf.pages} página · ${extracted.kwh} kWh`
-        );
+        setOcrStatus("PDF leído, pero no se identificó automáticamente el consumo. Revisa los datos.");
       } else {
-        setOcrStatus(
-          `Factura PDF leída · ${extracted.kwh} kWh · requiere verificación`
-        );
+        setOcrStatus(`Factura PDF leída correctamente · ${extractedPdf.pages} página`);
       }
     } catch {
-      setError(
-        "No fue posible leer el PDF. Si es una factura escaneada, puedes usar una fotografía."
-      );
+      setError("No fue posible leer el PDF. Si es una factura escaneada, puedes usar una fotografía.");
       setOcrStatus("");
     } finally {
       setOcrRunning(false);
@@ -1043,218 +791,118 @@ export default function Home() {
     setOcrRunning(true);
     setError("");
     setOcrText("");
-    setOcrFields({});
-    setOcrStatus("Preparando reconocimiento inteligente…");
+    setOcrStatus("Preparando imagen para lectura…");
 
     let worker: Awaited<ReturnType<typeof import("tesseract.js").createWorker>> | null = null;
 
     try {
-      const { createWorker } = await import("tesseract.js");
+      const { createWorker, PSM } = await import("tesseract.js");
 
       worker = await createWorker("spa", 1, {
         logger: (message) => {
           if (message.status === "recognizing text" && typeof message.progress === "number") {
-            setOcrStatus("Reconociendo factura… " + Math.round(message.progress * 100) + "%");
+            setOcrStatus(`Analizando factura… ${Math.round(message.progress * 100)}%`);
+          } else if (message.status) {
+            setOcrStatus("Preparando reconocimiento…");
           }
         },
       });
 
+      // PSM.AUTO es más apropiado para facturas completas con varias zonas.
+      // Tesseract.js documenta que el aumento de resolución puede mejorar
+      // notablemente el reconocimiento y permite ajustar el modo de segmentación.
       await worker.setParameters({
+        tessedit_pageseg_mode: PSM.AUTO,
         preserve_interword_spaces: "1",
         user_defined_dpi: "300",
       });
 
-      const source = await preprocessInvoiceImageDetailed(fileToProcess, "original");
-      const regionResults: string[] = [];
+      const variants = [
+        { name: "foto original · página completa", mode: "original" as const, psm: PSM.AUTO },
+        { name: "foto original · bloque", mode: "original" as const, psm: PSM.SINGLE_BLOCK },
+        { name: "imagen mejorada · página completa", mode: "gray" as const, psm: PSM.AUTO },
+        { name: "imagen mejorada · bloque", mode: "gray" as const, psm: PSM.SINGLE_BLOCK },
+        { name: "imagen mejorada · texto disperso", mode: "gray" as const, psm: PSM.SPARSE_TEXT },
+        { name: "alto contraste · texto disperso", mode: "binary" as const, psm: PSM.SPARSE_TEXT },
+      ];
 
-      // Primera pasada: texto completo. Sirve para identificar el proveedor
-      // y decidir qué plantilla/regiones usar. Si no reconocemos el proveedor,
-      // usamos regiones genéricas y nunca bloqueamos la factura.
-      await worker.setParameters({
-        tessedit_pageseg_mode: 3,
-        preserve_interword_spaces: "1",
-        user_defined_dpi: "300",
-      });
+      const results: Array<{
+        text: string;
+        confidence: number;
+        score: number;
+        name: string;
+        extracted: Partial<FormState>;
+      }> = [];
 
-      const fullResult = await worker.recognize(source.blob, {}, { tsv: true });
-      const fullText = fullResult.data.text?.trim() ?? "";
+      for (let index = 0; index < variants.length; index += 1) {
+        const variant = variants[index];
+        setOcrStatus(`Leyendo factura (${index + 1} de ${variants.length})…`);
 
-      if (fullText) {
-        regionResults.push("### lectura general\n" + fullText);
-      }
+        await worker.setParameters({
+          tessedit_pageseg_mode: variant.psm,
+          preserve_interword_spaces: "1",
+          user_defined_dpi: "300",
+        });
 
-      const provider = identifyInvoiceProvider(fullText);
-      const template = getInvoiceTemplate(provider.id);
-      const regions = template?.regions ?? GENERIC_INVOICE_REGIONS;
+        const processed = await preprocessInvoiceImage(fileToProcess, variant.mode);
+        const result = await worker.recognize(
+          processed,
+          {},
+          { tsv: true }
+        );
+        const text = result.data.text?.trim() ?? "";
+        const confidence = typeof result.data.confidence === "number" ? result.data.confidence : 0;
 
-      let parsed = parseInvoiceText(
-        fullText,
-        "image-ocr"
-      );
+        if (text) {
+          const extracted = extractInvoiceData(text);
+          const spatialKwh = typeof result.data.tsv === "string"
+            ? extractKwhFromTsv(result.data.tsv)
+            : null;
 
-      const needsRegionalPass =
-        !parsed.validation.consistent ||
-        !parsed.consumptionKwh.value ||
-        !parsed.municipality.value ||
-        !parsed.billingPeriod.value ||
-        !parsed.billingDays.value ||
-        !parsed.previousReading.value ||
-        !parsed.currentReading.value;
+          // Nunca sustituimos un consumo validado por lecturas con un número
+          // obtenido únicamente por posición. La posición se usa como
+          // respaldo, no como fuente principal.
+          if (!extracted.kwh && spatialKwh) {
+            extracted.kwh = spatialKwh;
+          }
 
-      if (needsRegionalPass) {
-        for (let index = 0; index < regions.length; index += 1) {
-          const region = regions[index];
+          const hasValidatedReading =
+            Boolean(extracted.previous && extracted.current && extracted.kwh) &&
+            Number(extracted.current) - Number(extracted.previous) === Number(extracted.kwh);
 
-          setOcrStatus(
-            `Analizando ${region.name} (${index + 1} de ${regions.length})…`
-          );
+          const fieldCount = Object.keys(extracted).length;
+          const score =
+            scoreOcrText(text, confidence) +
+            fieldCount * 25 +
+            (hasValidatedReading ? 220 : 0) +
+            (spatialKwh && Number(spatialKwh) >= 20 ? 60 : 0);
 
-          await worker.setParameters({
-            tessedit_pageseg_mode: region.psm,
-            preserve_interword_spaces: "1",
-            user_defined_dpi: "300",
-          });
-
-          const rectangle = {
-            left: Math.max(0, Math.round(region.x * source.width)),
-            top: Math.max(0, Math.round(region.y * source.height)),
-            width: Math.min(source.width, Math.round(region.width * source.width)),
-            height: Math.min(source.height, Math.round(region.height * source.height)),
-          };
-
-          const result = await worker.recognize(
-            source.blob,
-            { rectangle },
-            { tsv: true }
-          );
-
-          const text = result.data.text?.trim() ?? "";
-          if (!text) continue;
-
-          regionResults.push(`### ${region.name}\n${text}`);
-
-          const candidate = parseInvoiceText(
+          results.push({
             text,
-            "image-ocr"
-          );
-
-          // El parser completo conserva evidencias y validaciones. Para la UI
-          // solo necesitamos los campos normalizados, pero la decisión de
-          // consumo se toma comparando todas las evidencias disponibles.
-          const candidateText = regionResults.join("\n\n");
-          const combinedParsed = parseInvoiceText(candidateText, "image-ocr");
-
-          if (
-            combinedParsed.validation.score >= parsed.validation.score ||
-            !parsed.consumptionKwh.value
-          ) {
-            parsed = combinedParsed;
-          } else {
-            // Si la región solo aporta un dato que el acumulado no tenía,
-            // conservamos el mejor acumulado y seguimos explorando.
-            const current = parsed;
-            const mergedText = [
-              current.rawText,
-              candidate.rawText,
-            ].filter(Boolean).join("\n");
-            const merged = parseInvoiceText(mergedText, "image-ocr");
-
-            if (
-              merged.municipality.value ||
-              merged.billingPeriod.value ||
-              merged.billingDays.value ||
-              merged.previousReading.value ||
-              merged.currentReading.value
-            ) {
-              parsed = merged;
-            }
-          }
-        }
-      }
-
-      // Segunda variante: contraste mejorado. Solo se ejecuta si todavía no
-      // existe evidencia suficiente; así evitamos multiplicar el coste de OCR
-      // en facturas fáciles.
-      if (
-        !parsed.validation.consistent ||
-        !parsed.consumptionKwh.value ||
-        !parsed.previousReading.value ||
-        !parsed.currentReading.value
-      ) {
-        setOcrStatus("Repitiendo zonas críticas con contraste mejorado…");
-
-        const enhanced = await preprocessInvoiceImageDetailed(fileToProcess, "gray");
-
-        for (const region of regions.slice(0, 4)) {
-          await worker.setParameters({
-            tessedit_pageseg_mode: region.psm,
-            preserve_interword_spaces: "1",
-            user_defined_dpi: "300",
+            confidence,
+            score,
+            name: variant.name,
+            extracted,
           });
-
-          const rectangle = {
-            left: Math.max(0, Math.round(region.x * enhanced.width)),
-            top: Math.max(0, Math.round(region.y * enhanced.height)),
-            width: Math.min(enhanced.width, Math.round(region.width * enhanced.width)),
-            height: Math.min(enhanced.height, Math.round(region.height * enhanced.height)),
-          };
-
-          const result = await worker.recognize(
-            enhanced.blob,
-            { rectangle },
-            { tsv: true }
-          );
-
-          const text = result.data.text?.trim() ?? "";
-          if (!text) continue;
-
-          regionResults.push(`### ${region.name} · contraste\n${text}`);
-
-          const candidate = parseInvoiceText(
-            regionResults.join("\n\n"),
-            "image-ocr"
-          );
-
-          if (candidate.validation.score >= parsed.validation.score) {
-            parsed = candidate;
-          }
         }
       }
 
-      const combinedText = regionResults.join("\n\n");
-      const finalParsed = parseInvoiceText(combinedText, "image-ocr");
+      if (!results.length) {
+        setOcrStatus("No se encontró texto legible. Intenta con una foto completa, nítida y bien iluminada.");
+        return;
+      }
 
-      const selected =
-        finalParsed.validation.score >= parsed.validation.score
-          ? finalParsed
-          : parsed;
+      results.sort((a, b) => b.score - a.score);
+      const best = results[0];
 
-      const extracted: Partial<FormState> = {
-        municipality: selected.municipality.value !== null ? String(selected.municipality.value) : undefined,
-        estrato: selected.stratum.value !== null ? String(selected.stratum.value) : undefined,
-        period: selected.billingPeriod.value !== null ? String(selected.billingPeriod.value) : undefined,
-        days: selected.billingDays.value !== null ? String(selected.billingDays.value) : undefined,
-        previous: selected.previousReading.value !== null ? String(selected.previousReading.value) : undefined,
-        current: selected.currentReading.value !== null ? String(selected.currentReading.value) : undefined,
-        kwh: selected.consumptionKwh.value !== null ? String(selected.consumptionKwh.value) : undefined,
-      };
+      setOcrText(best.text);
+      setOcrFields(best.extracted);
+      setForm((current) => ({ ...current, ...best.extracted }));
 
-      setOcrText(combinedText);
-      setOcrFields(extracted);
-      setForm((current) => ({ ...current, ...extracted }));
-
-      if (selected.validation.consistent) {
-        setOcrStatus(
-          `Lectura validada · proveedor: ${selected.provider.value ?? "genérico"} · ${selected.consumptionKwh.value ?? "—"} kWh`
-        );
-      } else if (selected.consumptionKwh.value) {
-        setOcrStatus(
-          `Lectura parcial · ${selected.consumptionKwh.value} kWh. Revisa los datos antes de guardar.`
-        );
+      if (best.confidence < 55) {
+        setOcrStatus("Lectura realizada con baja confianza. Revisa los datos antes de continuar.");
       } else {
-        setOcrStatus(
-          "No se pudo validar suficientemente la factura. Corrige los datos manualmente."
-        );
+        setOcrStatus("Lectura terminada. Revisa y corrige los datos antes de guardar.");
       }
     } catch {
       setError("No fue posible procesar la factura. Puedes corregir los datos manualmente.");
