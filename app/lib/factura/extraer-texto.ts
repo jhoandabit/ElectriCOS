@@ -4,6 +4,7 @@
 // disponible y la segunda opinión cuando sí lo está.
 
 import { detectarEmpresa } from "./empresas";
+import { extraerPorEstructura } from "./estructura";
 import {
   diasEntre,
   fechasEnTexto,
@@ -36,7 +37,7 @@ function primerNumeroTras(texto: string, etiqueta: RegExp, ventana = 60): number
 }
 
 function buscarMunicipio(t: string): string | null {
-  const m = t.match(/municipio\s*[:.\-]?\s*(?:\d{1,5}\s*[-.]?\s*)?([a-z][a-z .]{2,30}?)(?=\s{2,}|\s*[-,:/(]|\s+(?:depto|departamento|ciclo|estrato|servicio|barrio|ruta|valle|risaralda|caldas)|\n|$)/);
+  const m = t.match(/municipio\s*[:.\-]?\s*(?:de\s+)?(?:\d{1,5}\s*[-.]?\s*)?([a-z][a-z .]{2,30}?)(?=\s{2,}|\s*[-,:/(]|\s+(?:depto|departamento|ciclo|estrato|servicio|barrio|ruta|valle|risaralda|caldas)|\n|$)/);
   if (m) {
     const candidato = m[1].trim();
     const conocido = MUNICIPIOS_CONOCIDOS.find((x) => normalizarTexto(x) === candidato);
@@ -112,38 +113,25 @@ function buscarPeriodo(t: string): { periodo: string | null; dias: number | null
 }
 
 /**
- * Busca tres números donde actual − anterior = consumo. Es la evidencia
- * más fuerte que hay en una factura, así que la probamos primero.
+ * Busca tres números SEGUIDOS donde |A − B| = C (lectura, lectura,
+ * diferencia). Exigir que estén juntos evita emparejar valores sueltos
+ * del histórico de consumo.
  */
 function buscarTripleLecturas(t: string) {
-  const tokens = Array.from(t.matchAll(/\b\d{1,3}(?:[.,]\d{3})+\b|\b\d{1,6}(?:[.,]\d{1,2})?\b/g)).map((m) => ({
-    valor: parseNumeroCO(m[0]),
-    indice: m.index ?? 0,
-  }));
+  const tokens = Array.from(t.matchAll(/\b\d{1,3}(?:[.,]\d{3})+\b|\b\d{1,7}(?:[.,]\d{1,2})?\b/g))
+    .map((m) => parseNumeroCO(m[0]))
+    .filter((v): v is number => v !== null);
 
-  const lecturas = tokens.filter((x) => x.valor !== null && Number.isInteger(x.valor) && x.valor >= 100 && x.valor <= 999_999);
-  const consumos = new Set(tokens.filter((x) => x.valor !== null && x.valor >= 5 && x.valor < 3000).map((x) => x.valor as number));
-
-  let mejor: { anterior: number; actual: number; consumo: number; distancia: number } | null = null;
-
-  for (let i = 0; i < lecturas.length; i++) {
-    for (let j = i + 1; j < lecturas.length; j++) {
-      const a = lecturas[i];
-      const b = lecturas[j];
-      const distancia = Math.abs(a.indice - b.indice);
-      if (distancia > 400) continue;
-      const menor = Math.min(a.valor as number, b.valor as number);
-      const mayor = Math.max(a.valor as number, b.valor as number);
-      const consumo = mayor - menor;
-      if (consumo < 5 || consumo >= 3000) continue;
-      if (!consumos.has(consumo)) continue;
-      // Evita confundir fechas o años (2025/2026) con lecturas.
-      if (menor >= 2000 && mayor <= 2100 && consumo < 5) continue;
-      if (!mejor || distancia < mejor.distancia) mejor = { anterior: menor, actual: mayor, consumo, distancia };
-    }
+  for (let i = 0; i + 2 < tokens.length; i++) {
+    const [a, b, c] = [tokens[i], tokens[i + 1], tokens[i + 2]];
+    if (!Number.isInteger(a) || !Number.isInteger(b) || Math.max(a, b) < 100) continue;
+    const consumo = Math.abs(a - b);
+    if (consumo < 5 || consumo >= 3000 || consumo !== c) continue;
+    // Descarta años (2025 2026 1) y fechas.
+    if (a >= 1990 && a <= 2100 && b >= 1990 && b <= 2100) continue;
+    return { anterior: Math.min(a, b), actual: Math.max(a, b), consumo };
   }
-
-  return mejor;
+  return null;
 }
 
 function buscarLecturasEtiquetadas(t: string) {
@@ -238,6 +226,26 @@ export function extraerDeTexto(textoOriginal: string): DatosFactura {
   datos.totalPagar = total !== null && total >= 1000 ? total : null;
 
   datos.historico = buscarHistorico(t);
+
+  // Los patrones por estructura son más confiables que los de etiqueta
+  // cuando la fila completa cuadra (p. ej. la fila del medidor).
+  const e = extraerPorEstructura(textoOriginal);
+  if (e.consumoKwh !== undefined && e.lecturaAnterior !== undefined) {
+    datos.lecturaAnterior = e.lecturaAnterior;
+    datos.lecturaActual = e.lecturaActual ?? null;
+    datos.factorMultiplicador = e.factorMultiplicador ?? datos.factorMultiplicador;
+    datos.consumoKwh = e.consumoKwh;
+  } else if (datos.consumoKwh === null && e.consumoKwh !== undefined) {
+    datos.consumoKwh = e.consumoKwh;
+  }
+  datos.promedioKwh = e.promedioKwh ?? datos.promedioKwh;
+  if (e.periodo) datos.periodo = e.periodo;
+  if (e.diasFacturados) datos.diasFacturados = e.diasFacturados;
+  if (e.municipio) datos.municipio = e.municipio;
+  if (e.estrato && datos.estrato === null) datos.estrato = e.estrato;
+  if (e.valorKwh) datos.valorKwh = e.valorKwh;
+  if (e.totalPagar) datos.totalPagar = e.totalPagar;
+  if (e.historico && e.historico.length >= datos.historico.length) datos.historico = e.historico;
 
   return datos;
 }

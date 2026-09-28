@@ -1,6 +1,7 @@
 // Lectura de facturas con un modelo de visión (solo en el servidor).
-// Admite Gemini (Google) o Claude (Anthropic): se usa el que tenga clave
-// configurada en Vercel. Este archivo solo se importa desde app/api,
+// Proveedores, en orden: Vercel AI Gateway (se autentica solo dentro de
+// Vercel, sin claves), Gemini (GEMINI_API_KEY) y Claude (ANTHROPIC_API_KEY).
+// Si uno falla se prueba el siguiente. Este archivo solo se importa desde app/api,
 // así que las claves nunca llegan al navegador.
 
 
@@ -25,7 +26,7 @@ export type RespuestaIa = {
   observaciones: string | null;
 };
 
-export type Proveedor = "gemini" | "claude";
+export type Proveedor = "vercel" | "gemini" | "claude";
 
 const INSTRUCCIONES = `Eres un lector experto de facturas de energía eléctrica de Colombia (Energía de Pereira, CHEC, Celsia, EPM y otras).
 Recibes una foto o un PDF de una factura. Extrae SOLO lo que se ve en el documento; si un dato no aparece o no es legible, devuelve null. Nunca inventes ni estimes.
@@ -102,15 +103,23 @@ function esquemaGemini(esquema: unknown): unknown {
   return salida;
 }
 
-export function proveedorDisponible(): Proveedor | null {
-  const preferido = process.env.IA_PROVEEDOR?.toLowerCase();
-  const gemini = Boolean(process.env.GEMINI_API_KEY);
-  const claude = Boolean(process.env.ANTHROPIC_API_KEY);
-  if (preferido === "claude" && claude) return "claude";
-  if (preferido === "gemini" && gemini) return "gemini";
-  if (gemini) return "gemini";
-  if (claude) return "claude";
-  return null;
+/** Credencial para Vercel AI Gateway: clave explícita o token OIDC del proyecto. */
+function credencialGateway(tokenOidc?: string | null) {
+  return process.env.AI_GATEWAY_API_KEY || tokenOidc || process.env.VERCEL_OIDC_TOKEN || null;
+}
+
+/** Proveedores utilizables, en el orden en que se intentan. */
+export function proveedoresDisponibles(tokenOidc?: string | null): Proveedor[] {
+  const lista: Proveedor[] = [];
+  if (credencialGateway(tokenOidc) || process.env.VERCEL === "1") lista.push("vercel");
+  if (process.env.GEMINI_API_KEY) lista.push("gemini");
+  if (process.env.ANTHROPIC_API_KEY) lista.push("claude");
+
+  const preferido = process.env.IA_PROVEEDOR?.toLowerCase() as Proveedor | undefined;
+  if (preferido && lista.includes(preferido)) {
+    return [preferido, ...lista.filter((p) => p !== preferido)];
+  }
+  return lista;
 }
 
 function mensajeContexto(textoPdf?: string) {
@@ -120,6 +129,62 @@ function mensajeContexto(textoPdf?: string) {
 
 // Si Google retira un modelo, probamos el siguiente de la lista.
 const MODELOS_GEMINI = ["gemini-3.5-flash", "gemini-3-flash-preview", "gemini-2.5-flash"];
+
+// Modelos del AI Gateway, del más económico al de respaldo.
+const MODELOS_GATEWAY = ["google/gemini-3.5-flash", "google/gemini-2.5-flash", "anthropic/claude-haiku-4.5"];
+
+async function conGateway(base64: string, mime: string, textoPdf: string | undefined, tokenOidc?: string | null): Promise<RespuestaIa> {
+  const credencial = credencialGateway(tokenOidc);
+  if (!credencial) throw new Error("AI Gateway: no hay token OIDC ni AI_GATEWAY_API_KEY.");
+
+  const modelos = process.env.AI_GATEWAY_MODEL ? [process.env.AI_GATEWAY_MODEL, ...MODELOS_GATEWAY] : MODELOS_GATEWAY;
+  const archivo =
+    mime === "application/pdf"
+      ? { type: "file", file: { data: base64, media_type: mime, filename: "factura.pdf" } }
+      : { type: "image_url", image_url: { url: `data:${mime};base64,${base64}` } };
+
+  let ultimoError = "";
+  for (const modelo of modelos) {
+    const r = await fetch("https://ai-gateway.vercel.sh/v1/chat/completions", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${credencial}` },
+      body: JSON.stringify({
+        model: modelo,
+        temperature: 0,
+        max_tokens: 1500,
+        messages: [
+          { role: "system", content: INSTRUCCIONES },
+          { role: "user", content: [archivo, { type: "text", text: mensajeContexto(textoPdf) }] },
+        ],
+        tools: [
+          {
+            type: "function",
+            function: { name: "registrar_factura", description: "Registra los datos leídos de la factura.", parameters: ESQUEMA_JSON },
+          },
+        ],
+        tool_choice: { type: "function", function: { name: "registrar_factura" } },
+      }),
+    });
+
+    if (!r.ok) {
+      ultimoError = `AI Gateway (${modelo}) respondió ${r.status}: ${(await r.text()).slice(0, 300)}`;
+      // 401/403: problema de credenciales o de créditos; no sirve probar otro modelo.
+      if (r.status === 401 || r.status === 403 || r.status === 402) break;
+      continue;
+    }
+
+    const json = await r.json();
+    const mensaje = json?.choices?.[0]?.message;
+    const argumentos = mensaje?.tool_calls?.[0]?.function?.arguments;
+    if (typeof argumentos === "string" && argumentos.trim()) return JSON.parse(argumentos) as RespuestaIa;
+    // Algunos modelos responden el JSON como texto.
+    const texto: string | undefined = typeof mensaje?.content === "string" ? mensaje.content : undefined;
+    const bloque = texto?.match(/\{[\s\S]*\}/)?.[0];
+    if (bloque) return JSON.parse(bloque) as RespuestaIa;
+    ultimoError = `AI Gateway (${modelo}) no devolvió datos estructurados.`;
+  }
+  throw new Error(ultimoError || "AI Gateway no está disponible.");
+}
 
 async function conGemini(base64: string, mime: string, textoPdf?: string): Promise<RespuestaIa> {
   const modelos = process.env.GEMINI_MODEL ? [process.env.GEMINI_MODEL, ...MODELOS_GEMINI] : MODELOS_GEMINI;
@@ -190,11 +255,26 @@ async function conClaude(base64: string, mime: string, textoPdf?: string): Promi
   return uso.input as RespuestaIa;
 }
 
+/** Intenta cada proveedor disponible hasta que uno responda. */
 export async function leerFacturaConIa(
-  proveedor: Proveedor,
   base64: string,
   mime: string,
-  textoPdf?: string
-): Promise<RespuestaIa> {
-  return proveedor === "gemini" ? conGemini(base64, mime, textoPdf) : conClaude(base64, mime, textoPdf);
+  textoPdf?: string,
+  tokenOidc?: string | null
+): Promise<{ respuesta: RespuestaIa; proveedor: Proveedor }> {
+  const errores: string[] = [];
+  for (const proveedor of proveedoresDisponibles(tokenOidc)) {
+    try {
+      const respuesta =
+        proveedor === "vercel"
+          ? await conGateway(base64, mime, textoPdf, tokenOidc)
+          : proveedor === "gemini"
+            ? await conGemini(base64, mime, textoPdf)
+            : await conClaude(base64, mime, textoPdf);
+      return { respuesta, proveedor };
+    } catch (e) {
+      errores.push((e as Error).message);
+    }
+  }
+  throw new Error(errores.join(" | ") || "No hay proveedores de IA configurados.");
 }

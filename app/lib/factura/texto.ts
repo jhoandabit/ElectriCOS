@@ -122,13 +122,15 @@ export function fechasEnTexto(texto: string): Date[] {
 }
 
 /**
- * Dado un rango de fechas facturado, el periodo es el mes que
- * contiene más días del rango (p. ej. 15-jul a 14-ago → julio o agosto).
+ * Mes al que corresponde un periodo facturado. Las empresas (p. ej.
+ * Energía de Pereira) lo nombran por el mes en que termina la lectura:
+ * 14-ago a 10-sep → septiembre. Restamos 5 días al final para que un
+ * periodo 1-jul a 1-ago siga contando como julio.
  */
 export function periodoDesdeRango(inicio: Date, fin: Date): string | null {
   if (!(fin > inicio)) return null;
-  const mitad = new Date((inicio.getTime() + fin.getTime()) / 2);
-  return formatoPeriodo(mitad.getUTCFullYear(), mitad.getUTCMonth() + 1);
+  const referencia = new Date(fin.getTime() - 5 * 86_400_000);
+  return formatoPeriodo(referencia.getUTCFullYear(), referencia.getUTCMonth() + 1);
 }
 
 export function diasEntre(inicio: Date, fin: Date) {

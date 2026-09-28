@@ -17,8 +17,8 @@ Ambas entradas usan el mismo modelo de consumo (`app/lib/factura/tipos.ts`) y el
 
 Pensado para Energía de Pereira; también reconoce CHEC, Celsia y EPM.
 
-1. **IA de visión** (`app/api/factura`): lee fotos y PDF con Gemini o Claude, según la clave configurada.
-2. **Texto del PDF** (`app/lib/factura/extraer-texto.ts`): lee el texto digital del PDF sin internet. Si hay IA, sirve de segunda opinión.
+1. **IA de visión** (`app/api/factura`): lee fotos y PDF con Vercel AI Gateway (sin claves dentro de Vercel); Gemini o Claude como respaldo si hay clave.
+2. **Texto del PDF** (`app/lib/factura/extraer-texto.ts` y `estructura.ts`): lee el texto digital del PDF sin internet, incluso cuando las etiquetas son parte del diseño (Energía de Pereira). Si hay IA, sirve de segunda opinión.
 3. **OCR local** (`app/lib/factura/ocr-local.ts`): Tesseract en el navegador, cuando no hay IA ni texto digital.
 
 Toda lectura pasa por `app/lib/factura/validar.ts`: compara el consumo con las lecturas del
@@ -27,9 +27,10 @@ La factura no se guarda, y a la IA se le pide no devolver nombres, direcciones n
 
 ### Configurar la IA
 
-En Vercel → Settings → Environment Variables agrega `GEMINI_API_KEY`
-(clave gratuita en https://aistudio.google.com/apikey) y vuelve a desplegar.
-Sin clave, la app sigue funcionando con el texto del PDF y el OCR local. Ver `.env.example`.
+En Vercel no hace falta configurar nada: la ruta usa **Vercel AI Gateway** con el token OIDC del proyecto.
+Opcionales (Vercel → Settings → Environment Variables): `AI_GATEWAY_API_KEY` para probar en local,
+`GEMINI_API_KEY` o `ANTHROPIC_API_KEY` como respaldo. Sin IA, la app sigue funcionando con el texto
+del PDF y el OCR local. Ver `.env.example`.
 
 ## Arquitectura
 

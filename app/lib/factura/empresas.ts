@@ -11,6 +11,9 @@ const FIRMAS: Firma[] = [
     alias: [
       "empresa de energia de pereira",
       "energia de pereira",
+      "energia de perera", // así aparece, con error, en algunas facturas
+      "eepvm05",
+      "web-eepvm05",
       "eep.com.co",
       "eep s.a",
       "eeps.a",
@@ -20,6 +23,8 @@ const FIRMAS: Firma[] = [
       "informacion de consumo",
       "documento equivalente electronico",
       "periodo facturado",
+      "alumbrado publico ctg",
+      "clt consumo lectura tomada",
     ],
   },
   {
