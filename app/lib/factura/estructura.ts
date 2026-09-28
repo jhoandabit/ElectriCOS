@@ -160,3 +160,67 @@ export function extraerPorEstructura(textoOriginal: string): DatosEstructura {
 
   return datos;
 }
+
+export type FilaLecturas = {
+  lecturaAnterior: number;
+  lecturaActual: number;
+  consumoKwh: number;
+  factorMultiplicador: number | null;
+  promedioKwh: number | null;
+};
+
+/** Números enteros de un renglón leído por OCR ("19.840" o "19,840" → 19840). */
+export function numerosDeLinea(linea: string): number[] {
+  return (linea.match(/\d[\d.,]*/g) ?? [])
+    .map((t) => t.replace(/[.,]$/, ""))
+    .map((t) => (/^\d{1,3}([.,]\d{3})+$/.test(t) ? t.replace(/[.,]/g, "") : t))
+    .map((t) => Number(t.replace(",", ".")))
+    .filter((n) => Number.isFinite(n));
+}
+
+/**
+ * Busca, en una fila de números, dos lecturas seguidas de su diferencia:
+ *   … 19840 19487 353 [1 353] [267]
+ * Opcionalmente, después vienen el factor, el consumo (= diferencia × factor)
+ * y el promedio, como en la fila "Activa" de Energía de Pereira.
+ */
+export function lecturasDesdeNumeros(numeros: number[]): FilaLecturas | null {
+  for (let i = 0; i + 2 < numeros.length; i++) {
+    const [a, b, c] = [numeros[i], numeros[i + 1], numeros[i + 2]];
+    if (!Number.isInteger(a) || !Number.isInteger(b) || Math.max(a, b) < 100) continue;
+    const dif = Math.abs(a - b);
+    if (dif < 5 || dif >= 3000 || dif !== c) continue;
+    if (a >= 1990 && a <= 2100 && b >= 1990 && b <= 2100) continue; // años
+
+    let factor: number | null = null;
+    let consumo = dif;
+    let promedio: number | null = null;
+    const [f, k, p] = [numeros[i + 3], numeros[i + 4], numeros[i + 5]];
+    if (f !== undefined && k !== undefined && f > 0 && f <= 1000 && Math.abs(dif * f - k) <= 1) {
+      factor = f;
+      consumo = k;
+      if (p !== undefined && p >= 5 && p < 3000) promedio = p;
+    } else if (f !== undefined && f === dif) {
+      // "… 353 353 267": consumo repetido y promedio, sin factor
+      if (k !== undefined && k >= 5 && k < 3000) promedio = k;
+    }
+
+    return {
+      lecturaAnterior: Math.min(a, b),
+      lecturaActual: Math.max(a, b),
+      consumoKwh: consumo,
+      factorMultiplicador: factor,
+      promedioKwh: promedio,
+    };
+  }
+  return null;
+}
+
+/** Prueba cada renglón y, si ninguno sirve, todos los números juntos. */
+export function lecturasDesdeLineas(lineas: string[]): FilaLecturas | null {
+  for (const linea of lineas) {
+    const r = lecturasDesdeNumeros(numerosDeLinea(linea));
+    if (r) return r;
+  }
+  return lecturasDesdeNumeros(lineas.flatMap(numerosDeLinea));
+}

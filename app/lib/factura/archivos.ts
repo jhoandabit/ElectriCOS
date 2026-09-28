@@ -31,7 +31,7 @@ function canvasABlob(canvas: HTMLCanvasElement, calidad = 0.85) {
   });
 }
 
-async function cargarImagen(archivo: Blob): Promise<ImageBitmap | HTMLImageElement> {
+export async function cargarImagen(archivo: Blob): Promise<ImageBitmap | HTMLImageElement> {
   // createImageBitmap respeta la orientación EXIF de las fotos del celular.
   if ("createImageBitmap" in window) {
     try {
@@ -49,12 +49,21 @@ async function cargarImagen(archivo: Blob): Promise<ImageBitmap | HTMLImageEleme
   });
 }
 
-/** Reduce la foto a máx. 2000 px y la convierte a JPEG. */
-export async function prepararFoto(archivo: File): Promise<ArchivoPreparado & { canvas: HTMLCanvasElement }> {
+export function dimensiones(imagen: ImageBitmap | HTMLImageElement) {
+  return {
+    ancho: "naturalWidth" in imagen ? imagen.naturalWidth : imagen.width,
+    alto: "naturalHeight" in imagen ? imagen.naturalHeight : imagen.height,
+  };
+}
+
+/** Reduce la foto (por defecto a máx. 2000 px) y la convierte a JPEG. */
+export async function prepararFoto(
+  archivo: File,
+  ladoMaximo = LADO_MAXIMO
+): Promise<ArchivoPreparado & { canvas: HTMLCanvasElement }> {
   const imagen = await cargarImagen(archivo);
-  const ancho = "naturalWidth" in imagen ? imagen.naturalWidth : imagen.width;
-  const alto = "naturalHeight" in imagen ? imagen.naturalHeight : imagen.height;
-  const escala = Math.min(1, LADO_MAXIMO / Math.max(ancho, alto));
+  const { ancho, alto } = dimensiones(imagen);
+  const escala = Math.min(1, ladoMaximo / Math.max(ancho, alto));
 
   const canvas = document.createElement("canvas");
   canvas.width = Math.round(ancho * escala);

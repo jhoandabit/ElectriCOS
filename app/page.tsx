@@ -1,9 +1,11 @@
 "use client";
 
 import { ChangeEvent, FormEvent, useMemo, useState } from "react";
+import SelectorRecuadro from "./components/SelectorRecuadro";
 import { leerFactura } from "./lib/factura/leer-factura";
+import { leerRecuadro, type Recuadro, type ResultadoGuiado } from "./lib/factura/ocr-guiado";
 import type { AvisoLectura, DatosFactura, FuenteLectura, ResultadoLectura } from "./lib/factura/tipos";
-import { consumoPorLecturas } from "./lib/factura/validar";
+import { consumoPorLecturas, validarYCompletar } from "./lib/factura/validar";
 
 type Screen = "home" | "manual" | "invoice";
 type FormState = {
@@ -84,6 +86,10 @@ export default function Home() {
   // Datos completos de la última factura (histórico, promedio, tarifa…)
   // para las siguientes etapas: diagnóstico, huella y metas.
   const [, setFacturaActual] = useState<DatosFactura | null>(null);
+  // Lectura guiada: la persona encierra la fila del medidor en la foto.
+  const [guiaAbierta, setGuiaAbierta] = useState(false);
+  const [recuadro, setRecuadro] = useState<Recuadro | null>(null);
+  const [guiado, setGuiado] = useState<ResultadoGuiado | null>(null);
 
   const set = (key: keyof FormState, value: string) => {
     setForm((f) => ({ ...f, [key]: value }));
@@ -142,6 +148,9 @@ export default function Home() {
     setInvoiceFile(file);
     setInvoicePreview(isPdf ? "" : URL.createObjectURL(file));
     setLectura(null);
+    setGuiaAbierta(false);
+    setRecuadro(null);
+    setGuiado(null);
     setError("");
     setLeyendo(true);
     setEstado("Preparando la factura…");
@@ -150,6 +159,7 @@ export default function Home() {
       const resultado = await leerFactura(file, setEstado);
       setLectura(resultado);
       setFacturaActual(resultado.datos);
+      if (!isPdf && resultado.fuente !== "ia" && resultado.confianzaConsumo < 80) setGuiaAbierta(true);
       setForm((actual) => ({ ...actual, ...formularioDesdeFactura(resultado.datos) }));
       setEstado("");
     } catch (e) {
@@ -157,6 +167,43 @@ export default function Home() {
       setEstado("");
     } finally {
       setLeyendo(false);
+    }
+  };
+
+  const leerFilaMedidor = async () => {
+    if (!invoiceFile || !recuadro || !lectura) return;
+    setLeyendo(true);
+    setError("");
+    try {
+      const r = await leerRecuadro(invoiceFile, recuadro, setEstado);
+      setGuiado(r);
+      if (!r.fila) {
+        setError("No se encontraron las lecturas en ese recuadro. Encierra solo la fila del medidor (Activa) o escribe los números mirando la imagen ampliada.");
+        return;
+      }
+      const datos: DatosFactura = {
+        ...lectura.datos,
+        lecturaAnterior: r.fila.lecturaAnterior,
+        lecturaActual: r.fila.lecturaActual,
+        consumoKwh: r.fila.consumoKwh,
+        factorMultiplicador: r.fila.factorMultiplicador ?? lectura.datos.factorMultiplicador,
+        promedioKwh: r.fila.promedioKwh ?? lectura.datos.promedioKwh,
+      };
+      const v = validarYCompletar(datos);
+      setLectura({
+        ...lectura,
+        datos: v.datos,
+        confianzaConsumo: v.confianzaConsumo,
+        avisos: [{ nivel: "ok", campo: "consumoKwh", mensaje: "Lecturas tomadas de la fila que encerraste." }, ...v.avisos],
+      });
+      setFacturaActual(v.datos);
+      setForm((actual) => ({ ...actual, ...formularioDesdeFactura(v.datos) }));
+      setGuiaAbierta(false);
+    } catch (e) {
+      setError((e as Error).message || "No fue posible leer el recuadro.");
+    } finally {
+      setLeyendo(false);
+      setEstado("");
     }
   };
 
@@ -200,10 +247,10 @@ export default function Home() {
               />
               <span className="camera-icon">📷</span>
               <strong>{invoiceFile ? "Elegir otra factura" : "Tomar foto o seleccionar factura"}</strong>
-              <small>Foto (de frente, completa y con buena luz) o PDF descargado de la empresa.</small>
+              <small>PDF descargado de la empresa, o foto tomada con la cámara: de frente, con buena luz y sin sombras. Las capturas de pantalla pequeñas no se leen bien.</small>
             </label>
 
-            {invoicePreview && (
+            {invoicePreview && !guiaAbierta && (
               <div className="invoice-preview">
                 <img src={invoicePreview} alt="Vista previa de la factura seleccionada" />
               </div>
@@ -306,6 +353,40 @@ export default function Home() {
                   Revisar y completar datos
                 </button>
               </section>
+            )}
+
+            {invoicePreview && lectura && !leyendo && !guiaAbierta && (
+              <button className="secondary-button full-button" type="button" onClick={() => setGuiaAbierta(true)}>
+                {lectura.confianzaConsumo >= 80 ? "Corregir leyendo la fila del medidor" : "Leer la fila del medidor"}
+              </button>
+            )}
+
+            {invoicePreview && guiaAbierta && (
+              <section className="guia-card" aria-label="Lectura guiada">
+                <span className="section-kicker">LECTURA GUIADA · SIN INTERNET</span>
+                <h3>Encierra la fila del medidor</h3>
+                <p>
+                  Arrastra el dedo sobre la foto para encerrar la fila <b>Activa</b>: la que tiene el número del medidor,
+                  la lectura actual, la anterior y el consumo. Deja un poco de margen.
+                </p>
+                <SelectorRecuadro src={invoicePreview} valor={recuadro} onCambio={setRecuadro} />
+                <div className="button-row">
+                  <button className="secondary-button" type="button" onClick={() => setGuiaAbierta(false)} disabled={leyendo}>
+                    Cancelar
+                  </button>
+                  <button className="primary-button" type="button" onClick={leerFilaMedidor} disabled={!recuadro || leyendo}>
+                    Leer esta fila
+                  </button>
+                </div>
+              </section>
+            )}
+
+            {guiado && (
+              <div className="guia-recorte">
+                <span className="metric-label">FILA LEÍDA (AMPLIADA)</span>
+                <img src={guiado.recorteUrl} alt="Recorte ampliado de la fila del medidor" />
+                {!guiado.fila && <small>Si no se lee bien, escribe las lecturas en el formulario mirando esta imagen.</small>}
+              </div>
             )}
 
             {lectura?.textoTecnico && (

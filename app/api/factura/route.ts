@@ -59,7 +59,7 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error("[api/factura]", error);
     return NextResponse.json(
-      { error: "El servicio de lectura no respondió. Se intentará la lectura sin conexión." },
+      { error: "La lectura con IA no está disponible en este momento. Se usó la lectura sin internet." },
       { status: 502 }
     );
   }

@@ -20,6 +20,9 @@ Pensado para Energía de Pereira; también reconoce CHEC, Celsia y EPM.
 1. **IA de visión** (`app/api/factura`): lee fotos y PDF con Vercel AI Gateway (sin claves dentro de Vercel); Gemini o Claude como respaldo si hay clave.
 2. **Texto del PDF** (`app/lib/factura/extraer-texto.ts` y `estructura.ts`): lee el texto digital del PDF sin internet, incluso cuando las etiquetas son parte del diseño (Energía de Pereira). Si hay IA, sirve de segunda opinión.
 3. **OCR local** (`app/lib/factura/ocr-local.ts`): Tesseract en el navegador, cuando no hay IA ni texto digital.
+4. **Lectura guiada de fotos** (`app/lib/factura/ocr-guiado.ts`): la persona encierra con el dedo la fila del
+   medidor; se recorta a resolución completa, se endereza, se borran las líneas de la tabla y se lee renglón
+   por renglón. Gratis, sin internet y sin enviar la foto a ningún servicio.
 
 Toda lectura pasa por `app/lib/factura/validar.ts`: compara el consumo con las lecturas del
 medidor, con el promedio de la factura y con rangos razonables, y le dice a la persona qué revisar.

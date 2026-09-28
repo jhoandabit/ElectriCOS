@@ -874,3 +874,67 @@ button:disabled {
   font-size: 11px;
   color: var(--muted);
 }
+
+/* ---- Lectura guiada (encerrar la fila del medidor) ---- */
+.guia-card {
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+}
+
+.guia-card h3 {
+  margin: 4px 0 6px;
+}
+
+.guia-card p {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.selector-recuadro {
+  position: relative;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: crosshair;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  margin-bottom: 12px;
+}
+
+.selector-recuadro img {
+  display: block;
+  width: 100%;
+  height: auto;
+  pointer-events: none;
+}
+
+.selector-marco {
+  position: absolute;
+  border: 3px solid var(--accent);
+  background: rgba(31, 122, 69, 0.15);
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.25);
+  border-radius: 4px;
+  pointer-events: none;
+}
+
+.guia-recorte {
+  margin-top: 16px;
+  display: grid;
+  gap: 8px;
+}
+
+.guia-recorte img {
+  width: 100%;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+}
+
+.guia-recorte small {
+  color: var(--muted);
+}

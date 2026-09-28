@@ -71,6 +71,7 @@ export async function leerFactura(archivo: File, alProgresar: AlProgresar): Prom
         const datos = local ? combinarLecturas(ia.datos, local) : ia.datos;
         return terminar(datos, "ia", avisos, pdf.texto || undefined);
       } catch (e) {
+        iaDisponibleCache = Promise.resolve(false);
         avisos.push({ nivel: "revisar", campo: "general", mensaje: (e as Error).message });
       }
     }
@@ -101,11 +102,17 @@ export async function leerFactura(archivo: File, alProgresar: AlProgresar): Prom
       if (ia.observaciones) avisos.push({ nivel: "revisar", campo: "general", mensaje: ia.observaciones });
       return terminar(ia.datos, "ia", avisos);
     } catch (e) {
+      // No volvemos a intentar la IA en esta sesión: evita esperas inútiles.
+      iaDisponibleCache = Promise.resolve(false);
       avisos.push({ nivel: "revisar", campo: "general", mensaje: (e as Error).message });
     }
   }
 
-  const texto = await ocrLocal(foto.canvas, alProgresar);
-  if (!texto) throw new Error("No se encontró texto en la foto. Tómala completa, de frente y con buena luz.");
+  // Para leer sin conexión conviene más resolución que para la IA.
+  const fotoOcr = await prepararFoto(archivo, 2600);
+  const texto = await ocrLocal(fotoOcr.canvas, alProgresar);
+  if (!texto) {
+    avisos.push({ nivel: "error", campo: "general", mensaje: "No se encontró texto en la foto. Usa la lectura guiada o toma la foto de frente y con buena luz." });
+  }
   return terminar(extraerDeTexto(texto), "ocr-local", avisos, texto);
 }
