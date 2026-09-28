@@ -1,0 +1,229 @@
+"use client";
+
+import { FormEvent, useMemo, useState } from "react";
+import type { Parametro } from "../lib/calculos/parametros";
+import type { ResultadoLectura } from "../lib/factura/tipos";
+import { consumoPorLecturas } from "../lib/factura/validar";
+import {
+  guardarHogar,
+  guardarRegistro,
+  importarHistorico,
+  registrarFactura,
+  type Hogar,
+  type NuevoRegistro,
+  type RegistroConsumo,
+} from "../lib/supabase/datos";
+import { mesActual, nombreMes } from "./formato";
+import type { MetodoLectura } from "./InvoiceScanner";
+import ResultadoMes from "./ResultadoMes";
+
+type Props = {
+  hogar: Hogar;
+  registros: RegistroConsumo[];
+  parametros: Record<string, Parametro>;
+  lectura?: ResultadoLectura | null;
+  metodo?: MetodoLectura;
+  onGuardado: () => Promise<void>;
+  onHogar: (h: Hogar) => void;
+  onTerminar: () => void;
+};
+
+type Campos = { periodo: string; kwh: string; anterior: string; actual: string; factor: string; dias: string; valorKwh: string };
+
+const txt = (v: number | null | undefined) => (v === null || v === undefined ? "" : String(v));
+
+function camposIniciales(lectura?: ResultadoLectura | null): Campos {
+  const d = lectura?.datos;
+  if (!d) return { periodo: mesActual(), kwh: "", anterior: "", actual: "", factor: "", dias: "", valorKwh: "" };
+  // Solo usamos las lecturas si cuadran con el consumo: si no, el formulario
+  // recalcularía un valor distinto al que la persona revisó.
+  const porLecturas = consumoPorLecturas(d);
+  const cuadran = porLecturas !== null && d.consumoKwh !== null && Math.abs(porLecturas - d.consumoKwh) <= Math.max(1, d.consumoKwh * 0.01);
+  return {
+    periodo: d.periodo ?? mesActual(),
+    kwh: txt(d.consumoKwh),
+    anterior: cuadran ? txt(d.lecturaAnterior) : "",
+    actual: cuadran ? txt(d.lecturaActual) : "",
+    factor: cuadran ? txt(d.factorMultiplicador) : "",
+    dias: txt(d.diasFacturados),
+    valorKwh: txt(d.valorKwh),
+  };
+}
+
+export default function ConsumoForm({ hogar, registros, parametros, lectura, metodo, onGuardado, onHogar, onTerminar }: Props) {
+  const [c, setC] = useState<Campos>(() => camposIniciales(lectura));
+  const [error, setError] = useState("");
+  const [guardando, setGuardando] = useState(false);
+  const [guardadoMes, setGuardadoMes] = useState<string | null>(null);
+  const [avisoTraza, setAvisoTraza] = useState("");
+  const [importados, setImportados] = useState<number | null>(null);
+
+  const set = (k: keyof Campos, v: string) => {
+    setC((x) => ({ ...x, [k]: v }));
+    setError("");
+  };
+
+  const porLecturas = useMemo(() => {
+    if (c.anterior === "" || c.actual === "") return null;
+    return consumoPorLecturas({
+      lecturaAnterior: Number(c.anterior),
+      lecturaActual: Number(c.actual),
+      factorMultiplicador: c.factor ? Number(c.factor) : null,
+    });
+  }, [c.anterior, c.actual, c.factor]);
+
+  const existeMes = registros.some((r) => r.periodo === c.periodo);
+  const d = lectura?.datos;
+  const hogarDistinto = d && ((d.estrato && d.estrato !== hogar.estrato) || (d.municipio && d.municipio.toLowerCase() !== hogar.municipio.toLowerCase()));
+  const historicoNuevo = (d?.historico ?? []).filter((p) => !registros.some((r) => r.periodo === p.periodo) && p.periodo !== c.periodo);
+
+  const enviar = async (e: FormEvent) => {
+    e.preventDefault();
+    const kwh = porLecturas ?? Number(c.kwh);
+    if (!/^20\d{2}-(0[1-9]|1[0-2])$/.test(c.periodo)) return setError("Selecciona el mes del periodo.");
+    if (c.periodo > mesActual()) return setError("El periodo no puede ser un mes futuro.");
+    if (c.anterior !== "" && c.actual !== "" && porLecturas === null) return setError("Las lecturas no son coherentes: revisa la anterior y la actual.");
+    if (!Number.isFinite(kwh) || kwh <= 0 || kwh >= 5000) return setError("Ingresa un consumo válido en kWh (entre 1 y 4999).");
+    const dias = c.dias ? Number(c.dias) : null;
+    if (dias !== null && (!Number.isInteger(dias) || dias < 1 || dias > 120)) return setError("Los días facturados deben estar entre 1 y 120.");
+
+    const nuevo: NuevoRegistro = {
+      periodo: c.periodo,
+      consumo_kwh: Math.round(kwh * 100) / 100,
+      dias,
+      lectura_anterior: c.anterior ? Number(c.anterior) : null,
+      lectura_actual: c.actual ? Number(c.actual) : null,
+      valor_kwh: c.valorKwh ? Number(c.valorKwh) : null,
+      fuente: lectura ? "factura" : "manual",
+    };
+
+    setGuardando(true);
+    try {
+      const id = await guardarRegistro(hogar.id, nuevo);
+      if (lectura) {
+        // La traza es evidencia, no bloquea: si falla, el consumo ya quedó guardado.
+        await registrarFactura(hogar.id, id, metodo ?? lectura.fuente, lectura.confianzaConsumo, lectura.datos, nuevo).catch(() =>
+          setAvisoTraza("El consumo se guardó, pero no la traza de la lectura.")
+        );
+      }
+      await onGuardado();
+      setGuardadoMes(c.periodo);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setGuardando(false);
+    }
+  };
+
+  const importar = async () => {
+    setError("");
+    try {
+      const n = await importarHistorico(hogar.id, historicoNuevo);
+      await onGuardado();
+      setImportados(n);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  };
+
+  const actualizarHogar = async () => {
+    if (!d) return;
+    try {
+      const h = await guardarHogar({ ...hogar, estrato: d.estrato ?? hogar.estrato, municipio: d.municipio ?? hogar.municipio });
+      onHogar(h);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  };
+
+  if (guardadoMes) {
+    const registro = registros.find((r) => r.periodo === guardadoMes);
+    return (
+      <>
+        <section className="success-card">
+          <div className="success-icon">✓</div>
+          <div>
+            <span className="section-kicker">CONSUMO GUARDADO</span>
+            <h2>{nombreMes(guardadoMes)}</h2>
+            {avisoTraza && <p>{avisoTraza}</p>}
+          </div>
+        </section>
+
+        {registro && <ResultadoMes registro={registro} hogar={hogar} registros={registros} parametros={parametros} />}
+
+        {historicoNuevo.length > 0 && importados === null && (
+          <section className="intro-card">
+            <span className="section-kicker">HISTÓRICO DE LA FACTURA</span>
+            <h2>La factura trae {historicoNuevo.length} meses anteriores.</h2>
+            <p>Si los agregas, ya tendrás tu línea base y podrás proponer una meta hoy mismo.</p>
+            <button className="primary-button full-button" onClick={importar}>Agregar meses anteriores</button>
+          </section>
+        )}
+        {importados !== null && (
+          <div className="calculated-note"><strong>{importados} meses agregados</strong><span>Ya puedes ver tu línea base en Meta y Progreso.</span></div>
+        )}
+
+        {hogarDistinto && (
+          <div className="info-note">
+            <strong>La factura dice otra cosa</strong>
+            <span>
+              Según la factura: {d?.municipio ?? hogar.municipio}, estrato {d?.estrato ?? hogar.estrato}. Tu hogar tiene {hogar.municipio}, estrato {hogar.estrato}.
+            </span>
+            <button className="secondary-button" onClick={actualizarHogar}>Usar los datos de la factura</button>
+          </div>
+        )}
+
+        {error && <div className="error-message" role="alert">{error}</div>}
+        <button className="primary-button full-button" onClick={onTerminar}>Listo</button>
+      </>
+    );
+  }
+
+  return (
+    <form className="form-card" onSubmit={enviar} noValidate>
+      <div className="form-section">
+        <h3>{lectura ? "Revisa lo que leímos" : "Consumo del mes"}</h3>
+        <label>
+          Mes del periodo
+          <input type="month" value={c.periodo} max={mesActual()} onChange={(e) => set("periodo", e.target.value)} />
+          <span className="field-help">El mes en que termina el periodo facturado.</span>
+        </label>
+        {existeMes && <div className="aviso aviso-revisar"><span aria-hidden="true">!</span><p>Ya hay un consumo de {nombreMes(c.periodo)}. Si guardas, se reemplaza.</p></div>}
+
+        <div className="field-grid">
+          <label>
+            Lectura anterior
+            <input type="number" min={0} step="1" value={c.anterior} onChange={(e) => set("anterior", e.target.value)} placeholder="Opcional" inputMode="numeric" />
+          </label>
+          <label>
+            Lectura actual
+            <input type="number" min={0} step="1" value={c.actual} onChange={(e) => set("actual", e.target.value)} placeholder="Opcional" inputMode="numeric" />
+          </label>
+        </div>
+        {porLecturas !== null ? (
+          <div className="calculated-note"><strong>{porLecturas} kWh</strong><span>Consumo = lectura actual − lectura anterior{c.factor && c.factor !== "1" ? ` × ${c.factor}` : ""}.</span></div>
+        ) : (
+          <label>
+            Consumo (kWh)
+            <input type="number" min={1} step="0.01" value={c.kwh} onChange={(e) => set("kwh", e.target.value)} placeholder="Ej. 186" inputMode="decimal" />
+            <span className="field-help">Si escribes las lecturas del medidor, ElectriCOs calcula el consumo.</span>
+          </label>
+        )}
+
+        <div className="field-grid">
+          <label>
+            Días facturados
+            <input type="number" min={1} max={120} value={c.dias} onChange={(e) => set("dias", e.target.value)} placeholder="Opcional" inputMode="numeric" />
+          </label>
+          <label>
+            Valor del kWh ($)
+            <input type="number" min={0} step="0.0001" value={c.valorKwh} onChange={(e) => set("valorKwh", e.target.value)} placeholder="Opcional" inputMode="decimal" />
+          </label>
+        </div>
+      </div>
+
+      {error && <div className="error-message" role="alert">{error}</div>}
+      <button className="primary-button" type="submit" disabled={guardando}>{guardando ? "Guardando…" : "Guardar consumo"}</button>
+    </form>
+  );
+}

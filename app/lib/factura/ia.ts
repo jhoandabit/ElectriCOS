@@ -4,6 +4,7 @@
 // Si uno falla se prueba el siguiente. Este archivo solo se importa desde app/api,
 // así que las claves nunca llegan al navegador.
 
+import { generarJsonGemini } from "../ia/gemini";
 
 export type RespuestaIa = {
   esFactura: boolean;
@@ -85,24 +86,6 @@ const ESQUEMA_JSON = {
   ],
 } as const;
 
-// Gemini usa un subconjunto de OpenAPI: "nullable" en lugar de tipos múltiples.
-function esquemaGemini(esquema: unknown): unknown {
-  if (Array.isArray(esquema)) return esquema.map(esquemaGemini);
-  if (!esquema || typeof esquema !== "object") return esquema;
-  const salida: Record<string, unknown> = {};
-  for (const [clave, valor] of Object.entries(esquema)) {
-    if (clave === "type" && Array.isArray(valor)) {
-      salida.type = String(valor.find((t) => t !== "null")).toUpperCase();
-      if (valor.includes("null")) salida.nullable = true;
-    } else if (clave === "type") {
-      salida.type = String(valor).toUpperCase();
-    } else {
-      salida[clave] = esquemaGemini(valor);
-    }
-  }
-  return salida;
-}
-
 /** Credencial para Vercel AI Gateway: clave explícita o token OIDC del proyecto. */
 function credencialGateway(tokenOidc?: string | null) {
   return process.env.AI_GATEWAY_API_KEY || tokenOidc || process.env.VERCEL_OIDC_TOKEN || null;
@@ -127,100 +110,12 @@ function mensajeContexto(textoPdf?: string) {
   return `Lee esta factura. Como apoyo, este es el texto digital extraído del mismo PDF (puede venir desordenado):\n"""\n${textoPdf.slice(0, 8000)}\n"""`;
 }
 
-// Si Google retira un modelo, probamos el siguiente de la lista.
-const MODELOS_GEMINI = ["gemini-3.5-flash", "gemini-3-flash-preview", "gemini-2.5-flash"];
-
-// Modelos del AI Gateway, del más económico al de respaldo.
-const MODELOS_GATEWAY = ["google/gemini-3.5-flash", "google/gemini-2.5-flash", "anthropic/claude-haiku-4.5"];
-
-async function conGateway(base64: string, mime: string, textoPdf: string | undefined, tokenOidc?: string | null): Promise<RespuestaIa> {
-  const credencial = credencialGateway(tokenOidc);
-  if (!credencial) throw new Error("AI Gateway: no hay token OIDC ni AI_GATEWAY_API_KEY.");
-
-  const modelos = process.env.AI_GATEWAY_MODEL ? [process.env.AI_GATEWAY_MODEL, ...MODELOS_GATEWAY] : MODELOS_GATEWAY;
-  const archivo =
-    mime === "application/pdf"
-      ? { type: "file", file: { data: base64, media_type: mime, filename: "factura.pdf" } }
-      : { type: "image_url", image_url: { url: `data:${mime};base64,${base64}` } };
-
-  let ultimoError = "";
-  for (const modelo of modelos) {
-    const r = await fetch("https://ai-gateway.vercel.sh/v1/chat/completions", {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${credencial}` },
-      body: JSON.stringify({
-        model: modelo,
-        temperature: 0,
-        max_tokens: 1500,
-        messages: [
-          { role: "system", content: INSTRUCCIONES },
-          { role: "user", content: [archivo, { type: "text", text: mensajeContexto(textoPdf) }] },
-        ],
-        tools: [
-          {
-            type: "function",
-            function: { name: "registrar_factura", description: "Registra los datos leídos de la factura.", parameters: ESQUEMA_JSON },
-          },
-        ],
-        tool_choice: { type: "function", function: { name: "registrar_factura" } },
-      }),
-    });
-
-    if (!r.ok) {
-      ultimoError = `AI Gateway (${modelo}) respondió ${r.status}: ${(await r.text()).slice(0, 300)}`;
-      // 401/403: problema de credenciales o de créditos; no sirve probar otro modelo.
-      if (r.status === 401 || r.status === 403 || r.status === 402) break;
-      continue;
-    }
-
-    const json = await r.json();
-    const mensaje = json?.choices?.[0]?.message;
-    const argumentos = mensaje?.tool_calls?.[0]?.function?.arguments;
-    if (typeof argumentos === "string" && argumentos.trim()) return JSON.parse(argumentos) as RespuestaIa;
-    // Algunos modelos responden el JSON como texto.
-    const texto: string | undefined = typeof mensaje?.content === "string" ? mensaje.content : undefined;
-    const bloque = texto?.match(/\{[\s\S]*\}/)?.[0];
-    if (bloque) return JSON.parse(bloque) as RespuestaIa;
-    ultimoError = `AI Gateway (${modelo}) no devolvió datos estructurados.`;
-  }
-  throw new Error(ultimoError || "AI Gateway no está disponible.");
-}
-
 async function conGemini(base64: string, mime: string, textoPdf?: string): Promise<RespuestaIa> {
-  const modelos = process.env.GEMINI_MODEL ? [process.env.GEMINI_MODEL, ...MODELOS_GEMINI] : MODELOS_GEMINI;
-  const cuerpo = JSON.stringify({
-    systemInstruction: { parts: [{ text: INSTRUCCIONES }] },
-    contents: [{ role: "user", parts: [{ inlineData: { mimeType: mime, data: base64 } }, { text: mensajeContexto(textoPdf) }] }],
-    generationConfig: {
-      temperature: 0,
-      responseMimeType: "application/json",
-      responseSchema: esquemaGemini(ESQUEMA_JSON),
-    },
+  return generarJsonGemini<RespuestaIa>({
+    sistema: INSTRUCCIONES,
+    partes: [{ inlineData: { mimeType: mime, data: base64 } }, { text: mensajeContexto(textoPdf) }],
+    esquema: ESQUEMA_JSON,
   });
-
-  let ultimoError = "";
-  for (const modelo of modelos) {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelo)}:generateContent`;
-    const r = await fetch(url, {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-goog-api-key": process.env.GEMINI_API_KEY as string },
-      body: cuerpo,
-    });
-
-    if (r.status === 404) {
-      ultimoError = `El modelo ${modelo} no existe.`;
-      continue;
-    }
-    if (!r.ok) throw new Error(`Gemini respondió ${r.status}: ${(await r.text()).slice(0, 300)}`);
-
-    const json = await r.json();
-    const texto: string | undefined = json?.candidates?.[0]?.content?.parts
-      ?.map((p: { text?: string }) => p.text ?? "")
-      .join("");
-    if (!texto) throw new Error("Gemini no devolvió contenido.");
-    return JSON.parse(texto) as RespuestaIa;
-  }
-  throw new Error(ultimoError || "No hay un modelo de Gemini disponible.");
 }
 
 async function conClaude(base64: string, mime: string, textoPdf?: string): Promise<RespuestaIa> {

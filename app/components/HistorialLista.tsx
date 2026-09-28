@@ -1,0 +1,56 @@
+"use client";
+
+import { useState } from "react";
+import { kwhMesNormalizado, redondear } from "../lib/calculos/motor";
+import { borrarRegistro, type RegistroConsumo } from "../lib/supabase/datos";
+import { nombreMes } from "./formato";
+
+const FUENTE: Record<RegistroConsumo["fuente"], string> = { factura: "Factura", manual: "Manual", historico: "Histórico" };
+
+export default function HistorialLista({ registros, onCambio }: { registros: RegistroConsumo[]; onCambio: () => Promise<void> }) {
+  const [borrando, setBorrando] = useState<string | null>(null);
+  const [error, setError] = useState("");
+
+  const borrar = async (r: RegistroConsumo) => {
+    if (!window.confirm(`¿Borrar el consumo de ${nombreMes(r.periodo)}?`)) return;
+    setBorrando(r.id);
+    setError("");
+    try {
+      await borrarRegistro(r.id);
+      await onCambio();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBorrando(null);
+    }
+  };
+
+  if (!registros.length) return <p className="vacio">Todavía no hay consumos registrados.</p>;
+
+  return (
+    <section className="historial" aria-label="Historial de consumo">
+      <div className="section-heading">
+        <span className="section-kicker">HISTORIAL</span>
+        <h2>{registros.length} {registros.length === 1 ? "mes registrado" : "meses registrados"}</h2>
+      </div>
+      <ul>
+        {[...registros].reverse().map((r) => (
+          <li key={r.id}>
+            <div>
+              <strong>{nombreMes(r.periodo)}</strong>
+              <small>
+                {FUENTE[r.fuente]}
+                {r.dias ? ` · ${r.dias} días · ${redondear(kwhMesNormalizado({ periodo: r.periodo, kwh: r.consumo_kwh, dias: r.dias }))} kWh/30 d` : ""}
+              </small>
+            </div>
+            <b>{redondear(r.consumo_kwh)} kWh</b>
+            <button className="icon-button chico" aria-label={`Borrar ${nombreMes(r.periodo)}`} onClick={() => borrar(r)} disabled={borrando === r.id}>
+              ✕
+            </button>
+          </li>
+        ))}
+      </ul>
+      {error && <div className="error-message" role="alert">{error}</div>}
+    </section>
+  );
+}

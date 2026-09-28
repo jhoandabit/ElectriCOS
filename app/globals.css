@@ -938,3 +938,362 @@ button:disabled {
 .guia-recorte small {
   color: var(--muted);
 }
+
+/* =====================================================================
+   Versión completa: pantallas de sesión, hogar, historial, meta y progreso
+   ===================================================================== */
+.page-content {
+  display: grid;
+  gap: 16px;
+  align-content: start;
+}
+
+.page-content > * {
+  margin-top: 0;
+}
+
+.text-button {
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-weight: 700;
+  cursor: pointer;
+  padding: 8px;
+}
+
+.icon-button.chico {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+/* Selector segmentado (Ingresar / Crear cuenta, porcentajes) */
+.segmented {
+  display: flex;
+  gap: 6px;
+  padding: 4px;
+  margin-bottom: 16px;
+  border-radius: 14px;
+  background: var(--soft);
+}
+
+.segmented button {
+  flex: 1;
+  min-height: 42px;
+  border: 0;
+  border-radius: 11px;
+  background: none;
+  color: var(--muted);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.segmented button.on {
+  background: var(--surface);
+  color: var(--fg);
+  box-shadow: 0 2px 8px rgba(23, 53, 31, 0.1);
+}
+
+/* Casillas de verificación en una fila */
+.form-section label.check-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-weight: 400;
+  font-size: 15px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.form-section label.check-row input {
+  width: 20px;
+  min-height: 20px;
+  height: 20px;
+  margin: 1px 0 0;
+  flex: 0 0 20px;
+  accent-color: var(--accent);
+}
+
+/* Resultado del mes */
+.metric-note {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.stat {
+  padding: 12px;
+  border-radius: 14px;
+  background: var(--soft);
+  display: grid;
+  gap: 4px;
+}
+
+.stat span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.stat strong {
+  font-size: 15px;
+  line-height: 1.3;
+}
+
+.explicacion {
+  margin-top: 14px;
+  font-size: 14px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.explicacion summary {
+  cursor: pointer;
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.explicacion a {
+  color: var(--accent);
+}
+
+.preview-card {
+  width: 100%;
+  text-align: left;
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+}
+
+/* Botones de origen de la factura */
+.fuente-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.fuente-grid.is-disabled {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.fuente-boton {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 16px 8px;
+  border: 1.5px dashed #b9d3c1;
+  border-radius: 16px;
+  background: var(--soft);
+  cursor: pointer;
+  text-align: center;
+}
+
+.fuente-boton input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.fuente-boton span {
+  font-size: 26px;
+}
+
+.fuente-boton strong {
+  font-size: 14px;
+}
+
+.fuente-ayuda {
+  display: block;
+  margin-top: 10px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+/* Historial */
+.historial ul {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.historial li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+}
+
+.historial li > div {
+  flex: 1;
+  display: grid;
+  gap: 2px;
+}
+
+.historial small,
+.vacio {
+  color: var(--muted);
+}
+
+/* Gráfico de progreso */
+.grafico {
+  margin: 0;
+}
+
+.grafico figcaption {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.grafico-lienzo {
+  position: relative;
+}
+
+.grafico svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.g-grid {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.g-eje {
+  fill: var(--muted);
+  font-size: 10px;
+}
+
+.g-col {
+  fill: var(--accent);
+}
+
+.g-col.activa {
+  fill: var(--dark);
+}
+
+.g-ref-base {
+  stroke: #8a978f;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.g-ref-meta {
+  stroke: #a36b00;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.g-etiqueta {
+  fill: var(--fg);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.g-tooltip {
+  position: absolute;
+  top: 0;
+  transform: translate(-50%, -8px);
+  min-width: 150px;
+  max-width: 220px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--fg);
+  color: #fff;
+  font-size: 12px;
+  line-height: 1.4;
+  display: grid;
+  gap: 2px;
+  pointer-events: none;
+  box-shadow: var(--shadow);
+}
+
+/* Tabla de consumos */
+.tabla-card {
+  padding: 8px 4px;
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  background: var(--surface);
+  overflow-x: auto;
+}
+
+.tabla-card table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.tabla-card caption {
+  text-align: left;
+  padding: 10px 12px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.tabla-card th,
+.tabla-card td {
+  padding: 9px 12px;
+  text-align: right;
+  border-top: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.tabla-card th[scope="row"],
+.tabla-card thead th:first-child {
+  text-align: left;
+  font-weight: 600;
+}
+
+.tabla-card thead th {
+  color: var(--muted);
+  font-size: 12px;
+  border-top: 0;
+}
+
+/* Recomendaciones */
+.recomendaciones {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.recomendaciones li {
+  padding-left: 14px;
+  border-left: 3px solid var(--accent);
+}
+
+.recomendaciones p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+@media (max-width: 380px) {
+  .stat-grid {
+    grid-template-columns: 1fr;
+  }
+}
