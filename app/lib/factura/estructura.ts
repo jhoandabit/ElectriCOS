@@ -107,13 +107,13 @@ function totalFactura(t: string): number | null {
  */
 function tablaHistorico(t: string, periodo: string | undefined): PuntoHistorico[] {
   const patron = new RegExp(String.raw`\b(${MESES_CORTOS})[a-z]*\.?\s+(\d{1,4})\s+\$?[\d.,]{3,}\s+(\d{2})\b`, "g");
-  const filas: { mes: number; kwh: number }[] = [];
+  const filas: { mes: number; kwh: number; dias: number }[] = [];
   for (const m of t.matchAll(patron)) {
     const mes = mesDesdeTexto(m[1]);
     const kwh = Number(m[2]);
     const dias = Number(m[3]);
     if (!mes || kwh < 1 || kwh >= 3000 || dias < 15 || dias > 75) continue;
-    if (!filas.some((f) => f.mes === mes)) filas.push({ mes, kwh });
+    if (!filas.some((f) => f.mes === mes)) filas.push({ mes, kwh, dias });
   }
   if (!filas.length) return [];
 
@@ -122,9 +122,9 @@ function tablaHistorico(t: string, periodo: string | undefined): PuntoHistorico[
   // Recorremos de la fila más reciente a la más antigua asignando años.
   const resultado: PuntoHistorico[] = [];
   for (let i = filas.length - 1; i >= 0; i--) {
-    const { mes, kwh } = filas[i];
+    const { mes, kwh, dias } = filas[i];
     if (mes >= mesRef) anio -= 1; // cruzamos a diciembre del año anterior
-    resultado.unshift({ periodo: formatoPeriodo(anio, mes), kwh });
+    resultado.unshift({ periodo: formatoPeriodo(anio, mes), kwh, dias });
     mesRef = mes;
   }
   return resultado;

@@ -1,0 +1,67 @@
+DOCUMENTO EQUIVALENTE ELECTRÓNICO PARA SERVICIOS PÚBLICOS DOMICILIARIOS - ENERGÍA ELÉCTRICA  WEB-EEPVM05
+1000000
+14/SEP/2026  0
+NOMBRE DEL SUSCRIPTOR
+0  26,800
+DIRECCION OMITIDA MAT:00000000 BARRIO
+3,211
+00-00-000-0000  147 Cartago  Residencial  108  21/SEP/2026
+30,011
+CT0172  4
+319,853
+0  12  SM04  1
+DEL0000000  $349,864
+26,800
+Unidad en ( Kw - Hora )  MUNICIPIO DE CARTAGO
+415
+415  353
+353  MAR  207  162,374  31  256  280  268  267
+207  ABR  178  145,654  30  101  Alumbrado Publico Ctg  0  26,800  26,800  178  256  280  268  267
+207  MAY  256  213,529  31  178
+JUN  280  232,043  30
+JUL  268  229,778  31
+AGO  415  369,423  33
+MAR  MAR  ABR  ABR  MAY  MAY  JUN  JUN  JUL  JUL  AGO  AGO  ACT  Actual  PROM  Promedio  Cartago  891.900.493-2
+025 de 2024
+Calle 8 No 6-52 Oficina de Rentas Municipales
+1400000000 GNS  19840  19487  353  1  353  267
+3,211
+14/AGO/2026 - 10/SEP/2026  28
+92  Tasa Seguridad Conv.  0  3,195  3,195
+905.0529  AGO-2026  CLT Consumo Lectura Tomada  94  Interes Tasa Seguridad Conv0  16  16
+0-173  173  905.0529  156,574  0  156,574
+>173  180  905.0529  162,910  162,910
+420.2648  49.3138  81.6538  5.7099  267.8149  80.2957  905.0529
+.50  70,413
+DIUGj,n,q  22  FIUGj,n,q  15
+Durac.Interrup.usuarios garant.  Frec.Interrup.usuarios garant.
+DIUu,te  1  FIUu,te  3
+Durac.Interrup.usuarios acumul.  Frec.Interrup.usuarios acumul.
+DIUu,n,q,m  Valor a compensar  0  FIUu,n,q,m  0
+Durac.Interrup.usuarios mes  Frec.Interrup.usuarios mes
+VC  .00
+Operador de Red Empresa de Energía de Perera S.A ESP  Carrera 4 # 15 - 104 Local 1
+Línea 115 - 3151515
+400,238  P59 01/SEP/2026
+No practicar retención por renta por servicios públicos domiciliarios
+y actividades complementarias Concepto 002 06/02/2002.Grandes
+Contribuyentes Res 000200 27/12/2024.Autorretenedores Industria
+y comercio Pereira Acuerdo 023 17/12/2020
+319,853
+1  Consumo Activa Ctg  0  319,484  319,484
+5  Intereses Mes  0  369  369
+Â¿Quieres conocer el comportamiento
+de tu consumo en este periodo?
+INGRESA A ESTE CODIGO QR
+Resolucion CREG 105 007 de 2024
+CUFE:
+CUDE: omitido
+Haz clic aqui y paga
+tu factura por PSE
+Pago SIN
+AP y
+(415) codigo de barras omitido
+Terceros  $319,853
+Pago total
+1000000  factura  $349,864
+(415) codigo de barras omitido

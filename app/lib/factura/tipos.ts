@@ -15,6 +15,8 @@ export type PuntoHistorico = {
   /** Periodo en formato AAAA-MM */
   periodo: string;
   kwh: number;
+  /** Días del periodo, si la factura los muestra */
+  dias?: number;
 };
 
 export type DatosFactura = {
