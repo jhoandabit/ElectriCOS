@@ -757,3 +757,120 @@ button:disabled {
   color: var(--muted);
   font-size: 11px;
 }
+
+/* ---- Lector de facturas: avisos, confianza e histórico ---- */
+.camera-dropzone.is-disabled {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.detected-badge.confianza-alta {
+  background: var(--soft);
+  color: var(--accent);
+}
+
+.detected-badge.confianza-media {
+  background: #fff6e0;
+  color: #8a5a00;
+}
+
+.detected-badge.confianza-baja {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.avisos {
+  list-style: none;
+  margin: 16px 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.aviso {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border-radius: 12px;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.aviso span {
+  flex: 0 0 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  font-size: 12px;
+  color: #fff;
+}
+
+.aviso p {
+  margin: 0;
+}
+
+.aviso-ok {
+  background: var(--soft);
+}
+
+.aviso-ok span {
+  background: var(--accent);
+}
+
+.aviso-revisar {
+  background: #fff6e0;
+}
+
+.aviso-revisar span {
+  background: #c98a00;
+}
+
+.aviso-error {
+  background: var(--danger-bg);
+}
+
+.aviso-error span {
+  background: var(--danger);
+}
+
+.historico-mini {
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+}
+
+.historico-barras {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  height: 90px;
+  margin-top: 10px;
+}
+
+.historico-barra {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 4px;
+}
+
+.historico-barra i {
+  display: block;
+  width: 100%;
+  max-width: 26px;
+  border-radius: 6px 6px 2px 2px;
+  background: var(--accent);
+  opacity: 0.8;
+}
+
+.historico-barra small {
+  font-size: 11px;
+  color: var(--muted);
+}

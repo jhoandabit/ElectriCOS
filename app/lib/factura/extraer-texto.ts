@@ -1,0 +1,243 @@
+// Lector determinístico: extrae datos del TEXTO de una factura
+// (texto digital de un PDF o texto reconocido por OCR).
+// No necesita internet ni claves. Es el respaldo cuando la IA no está
+// disponible y la segunda opinión cuando sí lo está.
+
+import { detectarEmpresa } from "./empresas";
+import {
+  diasEntre,
+  fechasEnTexto,
+  formatoPeriodo,
+  mesDesdeTexto,
+  normalizarPeriodo,
+  normalizarTexto,
+  parseNumeroCO,
+  periodoDesdeRango,
+} from "./texto";
+import { DATOS_VACIOS, NOMBRES_EMPRESA, type DatosFactura, type PuntoHistorico } from "./tipos";
+
+// Municipios atendidos por las empresas del Eje Cafetero y norte del Valle.
+// Se usan solo cuando la factura no trae la etiqueta "Municipio".
+const MUNICIPIOS_CONOCIDOS = [
+  "Pereira", "Dosquebradas", "La Virginia", "Cartago", "Santa Rosa de Cabal",
+  "Marsella", "Belén de Umbría", "Apía", "Balboa", "Guática", "La Celia",
+  "Mistrató", "Pueblo Rico", "Quinchía", "Santuario", "Manizales",
+  "Chinchiná", "Villamaría", "Armenia", "Calarcá", "Ansermanuevo", "Toro",
+  "Obando", "Alcalá", "Ulloa", "El Águila", "Zarzal", "Roldanillo",
+  "La Unión", "Tuluá", "Buga", "Palmira", "Cali", "Jamundí", "Medellín",
+];
+
+const NUM = String.raw`(\d{1,3}(?:[.,]\d{3})+(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,4})?)`;
+
+function primerNumeroTras(texto: string, etiqueta: RegExp, ventana = 60): number | null {
+  const m = texto.match(new RegExp("(?:" + etiqueta.source + ")" + String.raw`[^\d\n]{0,25}` + `[\\s\\S]{0,${ventana}}?` + NUM, "i"));
+  // El patrón anterior toma el primer número tras la etiqueta dentro de la ventana.
+  return m ? parseNumeroCO(m[m.length - 1]) : null;
+}
+
+function buscarMunicipio(t: string): string | null {
+  const m = t.match(/municipio\s*[:.\-]?\s*(?:\d{1,5}\s*[-.]?\s*)?([a-z][a-z .]{2,30}?)(?=\s{2,}|\s*[-,:/(]|\s+(?:depto|departamento|ciclo|estrato|servicio|barrio|ruta|valle|risaralda|caldas)|\n|$)/);
+  if (m) {
+    const candidato = m[1].trim();
+    const conocido = MUNICIPIOS_CONOCIDOS.find((x) => normalizarTexto(x) === candidato);
+    if (conocido) return conocido;
+    if (candidato.length >= 3 && !/\d/.test(candidato)) {
+      return candidato.replace(/\b\w/g, (c) => c.toUpperCase());
+    }
+  }
+
+  // Sin etiqueta: el municipio conocido que más aparece en el texto.
+  let mejor: { nombre: string; veces: number } | null = null;
+  for (const nombre of MUNICIPIOS_CONOCIDOS) {
+    const n = normalizarTexto(nombre);
+    const veces = t.split(n).length - 1;
+    if (veces > 0 && (!mejor || veces > mejor.veces)) mejor = { nombre, veces };
+  }
+  return mejor?.nombre ?? null;
+}
+
+function buscarEstrato(t: string): number | null {
+  const patrones = [
+    /estrato\s*(?:socio\s*economico)?\s*[:.\-]?\s*0?([1-6])\b/,
+    /\best\.?\s*[:.]?\s*0?([1-6])\b/,
+    /residencial\s*(?:estrato\s*)?[-:]?\s*0?([1-6])\b/,
+    /\bres\.?\s*0?([1-6])\b/,
+    /\bclase\s*(?:de\s*)?(?:uso|servicio)?\s*[:.]?\s*residencial\s*0?([1-6])\b/,
+  ];
+  for (const p of patrones) {
+    const m = t.match(p);
+    if (m) return Number(m[1]);
+  }
+  return null;
+}
+
+function buscarDias(t: string): number | null {
+  const m =
+    t.match(/d[i1]as\s*(?:facturados|de\s*consumo|fact\.?|consumo)\s*[:.\-]?\s*(\d{1,3})\b/) ??
+    t.match(/d[i1]as\s*(?:facturados|de\s*consumo)[\s\S]{0,40}?\b(\d{2})\b/);
+  if (!m) return null;
+  const n = Number(m[1]);
+  return n >= 1 && n <= 120 ? n : null;
+}
+
+function buscarPeriodo(t: string): { periodo: string | null; dias: number | null } {
+  // 1. "Periodo facturado: 15/jul/2026 - 14/ago/2026"
+  const etiqueta = t.search(/per[i1]odo\s*(?:facturado|de\s*facturacion|de\s*consumo|consumo)?/);
+  if (etiqueta >= 0) {
+    const zona = t.slice(etiqueta, etiqueta + 140);
+    const fechas = fechasEnTexto(zona);
+    if (fechas.length >= 2) {
+      return { periodo: periodoDesdeRango(fechas[0], fechas[1]), dias: diasEntre(fechas[0], fechas[1]) };
+    }
+    const directo = normalizarPeriodo(zona.replace(/^per[i1]odo\s*(?:facturado|de\s*facturacion|de\s*consumo|consumo)?\s*[:.]?/, ""));
+    if (directo) return { periodo: directo, dias: null };
+  }
+
+  // 2. "Mes facturado: agosto de 2026" / "Factura del mes de agosto 2026"
+  const mes = t.match(/mes\s*(?:facturado|de\s*consumo|de)?\s*[:.]?\s*([a-z]{3,10})\.?\s*(?:de\s*)?(20\d{2})/);
+  if (mes) {
+    const n = mesDesdeTexto(mes[1]);
+    if (n) return { periodo: formatoPeriodo(Number(mes[2]), n), dias: null };
+  }
+
+  // 3. "Desde 15/07/2026 hasta 14/08/2026"
+  const rango = t.match(/desde\s*([\d/.\-a-z]{8,12})\s*hasta\s*([\d/.\-a-z]{8,12})/);
+  if (rango) {
+    const [a] = fechasEnTexto(rango[1]);
+    const [b] = fechasEnTexto(rango[2]);
+    if (a && b) return { periodo: periodoDesdeRango(a, b), dias: diasEntre(a, b) };
+  }
+
+  return { periodo: null, dias: null };
+}
+
+/**
+ * Busca tres números donde actual − anterior = consumo. Es la evidencia
+ * más fuerte que hay en una factura, así que la probamos primero.
+ */
+function buscarTripleLecturas(t: string) {
+  const tokens = Array.from(t.matchAll(/\b\d{1,3}(?:[.,]\d{3})+\b|\b\d{1,6}(?:[.,]\d{1,2})?\b/g)).map((m) => ({
+    valor: parseNumeroCO(m[0]),
+    indice: m.index ?? 0,
+  }));
+
+  const lecturas = tokens.filter((x) => x.valor !== null && Number.isInteger(x.valor) && x.valor >= 100 && x.valor <= 999_999);
+  const consumos = new Set(tokens.filter((x) => x.valor !== null && x.valor >= 5 && x.valor < 3000).map((x) => x.valor as number));
+
+  let mejor: { anterior: number; actual: number; consumo: number; distancia: number } | null = null;
+
+  for (let i = 0; i < lecturas.length; i++) {
+    for (let j = i + 1; j < lecturas.length; j++) {
+      const a = lecturas[i];
+      const b = lecturas[j];
+      const distancia = Math.abs(a.indice - b.indice);
+      if (distancia > 400) continue;
+      const menor = Math.min(a.valor as number, b.valor as number);
+      const mayor = Math.max(a.valor as number, b.valor as number);
+      const consumo = mayor - menor;
+      if (consumo < 5 || consumo >= 3000) continue;
+      if (!consumos.has(consumo)) continue;
+      // Evita confundir fechas o años (2025/2026) con lecturas.
+      if (menor >= 2000 && mayor <= 2100 && consumo < 5) continue;
+      if (!mejor || distancia < mejor.distancia) mejor = { anterior: menor, actual: mayor, consumo, distancia };
+    }
+  }
+
+  return mejor;
+}
+
+function buscarLecturasEtiquetadas(t: string) {
+  const anterior = primerNumeroTras(t, /lectura\s*anterior/, 40);
+  const actual = primerNumeroTras(t, /lectura\s*actual/, 40);
+  return {
+    anterior: anterior !== null && anterior >= 0 ? anterior : null,
+    actual: actual !== null && actual >= 0 ? actual : null,
+  };
+}
+
+function buscarConsumo(t: string): number | null {
+  const patrones = [
+    // "Consumo: 186 kWh" / "Consumo facturado 186 kwh"
+    new RegExp(String.raw`consumo\s*(?:total|facturado|del\s*periodo|activa|energia\s*activa|mes)?\s*(?:\(?kwh\)?)?\s*[:.\-]?\s*` + NUM + String.raw`\s*kwh`),
+    // "Consumo kWh 186"
+    new RegExp(String.raw`consumo\s*(?:total\s*)?\(?kwh\)?\s*[:.\-]?\s*` + NUM + String.raw`\b`),
+    // "186 kWh" cerca de la palabra consumo
+    new RegExp(String.raw`consumo[\s\S]{0,60}?\b` + NUM + String.raw`\s*kwh`),
+  ];
+  for (const p of patrones) {
+    const m = t.match(p);
+    if (m) {
+      const n = parseNumeroCO(m[1]);
+      if (n !== null && n >= 5 && n < 3000) return n;
+    }
+  }
+  return null;
+}
+
+function buscarHistorico(t: string): PuntoHistorico[] {
+  const puntos = new Map<string, number>();
+  // "ago/26 186", "agosto 2026: 186 kWh". Ignora fechas como "15-ago-2026 - 14".
+  const patron = /\b(ene|feb|mar|abr|may|jun|jul|ago|sep|sept|oct|nov|dic)[a-z]*\.?\s*[-/ ]?\s*(20\d{2}|\d{2})\b\s*[:\-]?\s+(\d{1,4}(?:[.,]\d{1,2})?)\b(?!\s*[-/.]\s*\d)/g;
+
+  for (const m of t.matchAll(patron)) {
+    // Si el mes viene precedido por "15-" o "15/", es parte de una fecha.
+    const antes = t.slice(Math.max(0, (m.index ?? 0) - 3), m.index ?? 0);
+    if (/\d\s?[-/.]\s?$/.test(antes)) continue;
+    const mes = mesDesdeTexto(m[1]);
+    const kwh = parseNumeroCO(m[3]);
+    if (!mes || kwh === null || kwh < 5 || kwh >= 3000) continue;
+    let anio = Number(m[2]);
+    if (anio < 100) anio += 2000;
+    puntos.set(formatoPeriodo(anio, mes), kwh);
+  }
+
+  return [...puntos.entries()]
+    .map(([periodo, kwh]) => ({ periodo, kwh }))
+    .sort((a, b) => a.periodo.localeCompare(b.periodo))
+    .slice(-12);
+}
+
+export function extraerDeTexto(textoOriginal: string): DatosFactura {
+  const t = normalizarTexto(textoOriginal);
+  const datos: DatosFactura = { ...DATOS_VACIOS, historico: [] };
+
+  const empresa = detectarEmpresa(t);
+  datos.empresa = empresa.id;
+  datos.empresaNombre = empresa.id === "otra" ? null : NOMBRES_EMPRESA[empresa.id];
+
+  datos.municipio = buscarMunicipio(t);
+  datos.estrato = buscarEstrato(t);
+
+  const periodo = buscarPeriodo(t);
+  datos.periodo = periodo.periodo;
+  datos.diasFacturados = buscarDias(t) ?? periodo.dias;
+
+  const factor = primerNumeroTras(t, /factor\s*(?:multiplicador|de\s*multiplicacion|mult\.?)/, 20);
+  datos.factorMultiplicador = factor !== null && factor > 0 && factor <= 1000 ? factor : null;
+
+  const etiquetadas = buscarLecturasEtiquetadas(t);
+  const triple = buscarTripleLecturas(t);
+
+  if (etiquetadas.anterior !== null && etiquetadas.actual !== null) {
+    datos.lecturaAnterior = etiquetadas.anterior;
+    datos.lecturaActual = etiquetadas.actual;
+  } else if (triple) {
+    datos.lecturaAnterior = triple.anterior;
+    datos.lecturaActual = triple.actual;
+  }
+
+  datos.consumoKwh = buscarConsumo(t) ?? triple?.consumo ?? null;
+
+  const promedio = primerNumeroTras(t, /(?:consumo\s*)?promedio(?:\s*(?:ultimos|de\s*los\s*ultimos)\s*\d+\s*meses)?/, 30);
+  datos.promedioKwh = promedio !== null && promedio >= 5 && promedio < 3000 ? promedio : null;
+
+  const valorKwh = primerNumeroTras(t, /(?:valor|costo|precio|tarifa)\s*(?:unitario\s*)?(?:del\s*)?(?:kwh|unitario)|\bcu\b/, 30);
+  datos.valorKwh = valorKwh !== null && valorKwh >= 100 && valorKwh <= 5000 ? valorKwh : null;
+
+  const total = primerNumeroTras(t, /total\s*a\s*pagar|valor\s*a\s*pagar|total\s*factura|pague\s*hasta/, 40);
+  datos.totalPagar = total !== null && total >= 1000 ? total : null;
+
+  datos.historico = buscarHistorico(t);
+
+  return datos;
+}

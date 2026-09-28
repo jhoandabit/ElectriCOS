@@ -1,6 +1,9 @@
 "use client";
 
 import { ChangeEvent, FormEvent, useMemo, useState } from "react";
+import { leerFactura } from "./lib/factura/leer-factura";
+import type { AvisoLectura, DatosFactura, FuenteLectura, ResultadoLectura } from "./lib/factura/tipos";
+import { consumoPorLecturas } from "./lib/factura/validar";
 
 type Screen = "home" | "manual" | "invoice";
 type FormState = {
@@ -12,6 +15,7 @@ type FormState = {
   previous: string;
   current: string;
   days: string;
+  factor: string;
 };
 
 const emptyForm: FormState = {
@@ -23,649 +27,48 @@ const emptyForm: FormState = {
   previous: "",
   current: "",
   days: "",
+  factor: "",
 };
 
-function parseNumber(value: string) {
-  const normalized = value.replace(/\s/g, "").replace(",", ".");
-  const number = Number(normalized);
-  return Number.isFinite(number) ? number : null;
-}
+const texto = (v: number | string | null | undefined) => (v === null || v === undefined ? "" : String(v));
 
-function preprocessInvoiceImage(file: File, mode: "gray" | "binary" | "original") {
-  return new Promise<Blob>((resolve, reject) => {
-    const image = new Image();
-    const objectUrl = URL.createObjectURL(file);
+function formularioDesdeFactura(d: DatosFactura): Partial<FormState> {
+  const campos: Partial<FormState> = {
+    municipality: texto(d.municipio),
+    estrato: texto(d.estrato),
+    period: texto(d.periodo),
+    kwh: texto(d.consumoKwh),
+    days: texto(d.diasFacturados),
+    factor: texto(d.factorMultiplicador),
+  };
 
-    image.onload = () => {
-      URL.revokeObjectURL(objectUrl);
-
-      // Tesseract funciona mejor cuando el texto llega con suficiente
-      // resolución. En fotos de factura el documento puede ocupar solo una
-      // parte de la imagen, por eso permitimos una ampliación mayor.
-      const maxWidth = 3200;
-      const scale = Math.min(1.8, maxWidth / image.naturalWidth);
-      const width = Math.max(1200, Math.round(image.naturalWidth * scale));
-      const height = Math.round(image.naturalHeight * (width / image.naturalWidth));
-
-      const canvas = document.createElement("canvas");
-      canvas.width = width;
-      canvas.height = height;
-
-      const context = canvas.getContext("2d", { willReadFrequently: true });
-      if (!context) {
-        reject(new Error("No se pudo preparar la imagen."));
-        return;
-      }
-
-      context.imageSmoothingEnabled = true;
-      context.imageSmoothingQuality = "high";
-      context.drawImage(image, 0, 0, width, height);
-
-      const imageData = context.getImageData(0, 0, width, height);
-      const data = imageData.data;
-
-      let sum = 0;
-      const luminance = new Uint8Array(width * height);
-
-      for (let i = 0, p = 0; i < data.length; i += 4, p++) {
-        const y = Math.round(
-          0.299 * data[i] +
-          0.587 * data[i + 1] +
-          0.114 * data[i + 2]
-        );
-        luminance[p] = y;
-        sum += y;
-      }
-
-      const mean = sum / luminance.length;
-
-      for (let i = 0, p = 0; i < data.length; i += 4, p++) {
-        let y = luminance[p];
-
-        if (mode === "original") {
-          // Conservamos el color original. Algunas facturas usan texto
-          // naranja/verde sobre fondo claro y el paso a gris puede reducir
-          // demasiado el contraste de esos elementos.
-          continue;
-        }
-
-        if (mode === "gray") {
-          y = Math.max(0, Math.min(255, Math.round((y - mean) * 1.55 + 128)));
-        } else {
-          const threshold = mean - 8;
-          y = luminance[p] < threshold ? 0 : 255;
-        }
-
-        data[i] = y;
-        data[i + 1] = y;
-        data[i + 2] = y;
-        data[i + 3] = 255;
-      }
-
-      context.putImageData(imageData, 0, 0);
-
-      canvas.toBlob(
-        (blob) => {
-          if (blob) resolve(blob);
-          else reject(new Error("No se pudo generar la imagen procesada."));
-        },
-        "image/jpeg",
-        0.94
-      );
-    };
-
-    image.onerror = () => {
-      URL.revokeObjectURL(objectUrl);
-      reject(new Error("No se pudo abrir la imagen."));
-    };
-
-    image.src = objectUrl;
-  });
-}
-
-function scoreOcrText(text: string, confidence: number) {
-  const normalized = text.toLowerCase();
-  let score = confidence || 0;
-
-  const usefulTerms = [
-    "consumo",
-    "energía",
-    "energia",
-    "kwh",
-    "lectura",
-    "actual",
-    "anterior",
-    "estrato",
-    "periodo",
-    "factura",
-    "municipio",
-    "total",
-  ];
-
-  for (const term of usefulTerms) {
-    if (normalized.includes(term)) score += 4;
+  // Solo pasamos las lecturas si cuadran con el consumo; si no, el formulario
+  // recalcularía un valor distinto al que la persona ya revisó.
+  const porLecturas = consumoPorLecturas(d);
+  if (porLecturas !== null && d.consumoKwh !== null && Math.abs(porLecturas - d.consumoKwh) <= Math.max(1, d.consumoKwh * 0.01)) {
+    campos.previous = texto(d.lecturaAnterior);
+    campos.current = texto(d.lecturaActual);
   }
 
-  const numericMatches = text.match(/\b\d{2,4}(?:[.,]\d{1,2})?\b/g);
-  score += Math.min(20, (numericMatches?.length ?? 0) * 1.5);
-
-  return score;
+  // No borramos lo que la persona ya escribió con campos vacíos.
+  return Object.fromEntries(Object.entries(campos).filter(([, v]) => v !== "")) as Partial<FormState>;
 }
 
-function normalizeInvoiceFieldText(text: string) {
-  return text
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[|]/g, " ")
-    .replace(/[—–]/g, "-")
-    .replace(/[\u00a0]/g, " ")
-    .replace(/[ \t]+/g, " ")
-    .trim();
-}
-
-type PdfTextItem = {
-  text: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
+const ETIQUETA_FUENTE: Record<FuenteLectura, string> = {
+  ia: "Lectura inteligente",
+  "pdf-texto": "Texto del PDF",
+  "ocr-local": "Lectura sin conexión",
+  manual: "Manual",
 };
 
-function normalizeLoose(value: string) {
-  return value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .replace(/[ \t]+/g, " ")
-    .trim();
-}
-
-function nearbyPdfText(
-  items: PdfTextItem[],
-  labelPattern: RegExp,
-  maxYDistance = 28,
-  maxXDistance = 420
-) {
-  const label = items.find((item) => labelPattern.test(normalizeLoose(item.text)));
-  if (!label) return "";
-
-  return items
-    .filter((item) => {
-      const yDistance = Math.abs(item.y - label.y);
-      const xDistance = item.x - (label.x + label.width);
-      return (
-        item !== label &&
-        yDistance <= maxYDistance &&
-        xDistance >= -8 &&
-        xDistance <= maxXDistance
-      );
-    })
-    .sort((a, b) => {
-      const yDiff = Math.abs(a.y - label.y) - Math.abs(b.y - label.y);
-      return yDiff !== 0 ? yDiff : a.x - b.x;
-    })
-    .map((item) => item.text)
-    .join(" ");
-}
-
-function extractReadingFromText(text: string) {
-  const tokens = Array.from(
-    text.matchAll(/\b\d{1,6}(?:[.,]\d{1,2})?\b/g)
-  ).map((match) => ({
-    value: parseNumber(match[0]),
-    index: match.index ?? 0,
-  }));
-
-  const readings = tokens
-    .filter((token) => token.value !== null && Number.isInteger(token.value) && token.value >= 1000 && token.value <= 999999)
-    .map((token) => token.value as number);
-
-  const consumptions = tokens
-    .filter((token) => token.value !== null && token.value >= 20 && token.value < 2000)
-    .map((token) => token.value as number);
-
-  // En OCR los tres números pueden quedar separados por palabras, columnas
-  // o saltos de línea. Buscamos una relación matemática válida dentro de una
-  // ventana razonable del texto, en vez de exigir que sean consecutivos.
-  for (const a of readings) {
-    for (const b of readings) {
-      if (a === b) continue;
-
-      const consumption = Math.abs(a - b);
-      if (consumption < 20 || consumption >= 2000) continue;
-
-      const aIndex = tokens.find((token) => token.value === a)?.index ?? 0;
-      const bIndex = tokens.find((token) => token.value === b)?.index ?? 0;
-
-      if (Math.abs(aIndex - bIndex) > 1200) continue;
-
-      if (consumptions.some((value) => value === consumption)) {
-        return {
-          previous: String(Math.min(a, b)),
-          current: String(Math.max(a, b)),
-          kwh: String(consumption),
-        };
-      }
-    }
-  }
-
-  return null;
-}
-
-function extractStructuredPdfData(
-  text: string,
-  items: PdfTextItem[] = []
-): Partial<FormState> {
-  const clean = normalizeInvoiceFieldText(text);
-  const result: Partial<FormState> = {};
-
-  const municipality =
-    clean.match(
-      /municipio\s*[:\-]?\s*(?:\d{1,4}\s+)?([A-Za-zÁÉÍÓÚáéíóúÑñ]{3,30})(?=\s*[-:]?\s*servicio|\s+ciclo|$)/i
-    ) ||
-    clean.match(
-      /municipio\s*[:\-]?\s*(?:\d{1,4}\s+)?([A-Za-zÁÉÍÓÚáéíóúÑñ]{3,30})/i
-    );
-
-  if (municipality) {
-    result.municipality = municipality[1].trim();
-  } else if (items.length) {
-    const nearby = nearbyPdfText(items, /^municipio$/);
-    const match = nearby.match(/(?:\d{1,4}\s+)?([A-Za-zÁÉÍÓÚáéíóúÑñ]{3,30})/i);
-    if (match) result.municipality = match[1].trim();
-  }
-
-  const estrato =
-    clean.match(/(?:estrato|est)\s*[:.]?\s*0?([1-6])\b/i) ||
-    clean.match(/(?:estrato|est)\s+0?([1-6])\b/i);
-
-  if (estrato) {
-    result.estrato = estrato[1];
-  } else if (items.length) {
-    const nearby = nearbyPdfText(items, /^(?:estrato|est)$/);
-    const match = nearby.match(/\b0?([1-6])\b/);
-    if (match) result.estrato = match[1];
-  }
-
-  const days =
-    clean.match(/d[ií]as\s+facturados\s*[:.]?\s*(\d{1,3})\b/i) ||
-    clean.match(/d[ií]as\s+facturados[\s\S]{0,40}?(\d{1,3})\b/i);
-
-  if (days) {
-    result.days = days[1];
-  } else if (items.length) {
-    const nearby = nearbyPdfText(items, /^d[ií]as\s+facturados$/);
-    const match = nearby.match(/\b(\d{1,3})\b/);
-    if (match) result.days = match[1];
-  }
-
-  const monthMap: Record<string, string> = {
-    ene: "01", enero: "01",
-    feb: "02", febrero: "02",
-    mar: "03", marzo: "03",
-    abr: "04", abril: "04",
-    may: "05", mayo: "05",
-    jun: "06", junio: "06",
-    jul: "07", julio: "07",
-    ago: "08", agosto: "08",
-    sep: "09", septiembre: "09",
-    oct: "10", octubre: "10",
-    nov: "11", noviembre: "11",
-    dic: "12", diciembre: "12",
-  };
-
-  const periodRange =
-    clean.match(
-      /periodo(?:\s+facturado)?\s*[:.]?\s*(\d{1,2})\s*[/\-]\s*([A-Za-z]{3,10})\s*[/\-]\s*(\d{4})\s*[-–]\s*(\d{1,2})\s*[/\-]\s*([A-Za-z]{3,10})\s*[/\-]\s*(\d{4})/i
-    ) ||
-    clean.match(
-      /periodo(?:\s+facturado)?[\s\S]{0,80}?(\d{1,2})\s*[/\-]\s*([A-Za-z]{3,10})\s*[/\-]\s*(\d{4})/i
-    );
-
-  if (periodRange) {
-    const month = monthMap[periodRange[2].toLowerCase()];
-    const year = periodRange[3];
-    if (month && year) result.period = year + "-" + month;
-  } else {
-    const numericPeriod = clean.match(
-      /periodo(?:\s+facturado)?[\s:]*(\d{4})\s*[-/]\s*(\d{1,2})/i
-    );
-
-    if (numericPeriod) {
-      result.period = numericPeriod[1] + "-" + numericPeriod[2].padStart(2, "0");
-    } else if (items.length) {
-      const nearby = nearbyPdfText(items, /^periodo$/i, 42, 500);
-      const date = nearby.match(
-        /(\d{1,2})\s*[/\-]\s*([A-Za-z]{3,10})\s*[/\-]\s*(\d{4})/i
-      );
-
-      if (date) {
-        const month = monthMap[date[2].toLowerCase()];
-        if (month) result.period = date[3] + "-" + month;
-      }
-    }
-  }
-
-  const reading = extractReadingFromText(clean);
-  if (reading) Object.assign(result, reading);
-
-  if (!result.kwh) {
-    const liquidationIndex = clean.search(/liquidaci[oó]n\s+del\s+consumo\s+actual/i);
-    const liquidation = liquidationIndex >= 0
-      ? clean.slice(liquidationIndex, liquidationIndex + 2200)
-      : clean;
-
-    const candidates = Array.from(
-      liquidation.matchAll(/(?:^|\s)(\d{2,4}(?:[.,]\d{1,2})?)(?=\s+(?:9\d{2}\.\d{4}|\d{5,6}))/g)
-    )
-      .map((match) => parseNumber(match[1]))
-      .filter((value): value is number =>
-        value !== null && value >= 20 && value < 2000
-      );
-
-    const unique = [...new Set(candidates)];
-
-    if (unique.length >= 2) {
-      result.kwh = String(
-        Number(unique.slice(0, 2).reduce((sum, value) => sum + value, 0).toFixed(2))
-      );
-    } else if (unique.length === 1) {
-      result.kwh = String(unique[0]);
-    }
-  }
-
-  return result;
-}
-
-async function extractInvoicePdf(file: File) {
-  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
-
-  pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-    "pdfjs-dist/legacy/build/pdf.worker.mjs",
-    import.meta.url
-  ).toString();
-
-  const buffer = await file.arrayBuffer();
-  const pdf = await pdfjs.getDocument({
-    data: new Uint8Array(buffer),
-  }).promise;
-
-  const pages: string[] = [];
-  const allItems: PdfTextItem[] = [];
-
-  for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
-    const page = await pdf.getPage(pageNumber);
-    const content = await page.getTextContent();
-
-    const items = (content.items as Array<{
-      str?: string;
-      transform?: number[];
-      width?: number;
-      height?: number;
-    }>)
-      .filter((item) => item.str?.trim())
-      .map((item) => ({
-        text: item.str ?? "",
-        x: item.transform?.[4] ?? 0,
-        y: item.transform?.[5] ?? 0,
-        width: item.width ?? 0,
-        height: item.height ?? Math.abs(item.transform?.[3] ?? 0),
-      }));
-
-    allItems.push(...items);
-
-    const ordered = [...items].sort((a, b) => {
-      const yDiff = Math.abs(b.y - a.y);
-      return yDiff > 3 ? b.y - a.y : a.x - b.x;
-    });
-
-    const lines: Array<{ y: number; text: string }> = [];
-
-    for (const item of ordered) {
-      const previous = lines[lines.length - 1];
-
-      if (!previous || Math.abs(previous.y - item.y) > 3) {
-        lines.push({ y: item.y, text: item.text });
-      } else {
-        previous.text += " " + item.text;
-      }
-    }
-
-    pages.push(lines.map((line) => line.text.trim()).filter(Boolean).join("\n"));
-    page.cleanup();
-  }
-
-  return {
-    text: pages.join("\n\n"),
-    items: allItems,
-    pages: pdf.numPages,
-  };
-}
-
-function normalizeOcrText(text: string) {
-  return text
-    .replace(/\r/g, " ")
-    .replace(/[|]/g, " ")
-    .replace(/[—–]/g, "-")
-    .replace(/[\u00a0]/g, " ")
-    .replace(/[ \t]+/g, " ")
-    .trim();
-}
-
-function numberCandidates(text: string) {
-  const matches = text.match(/\b\d{1,4}(?:[.,]\d{1,3})?\b/g) ?? [];
-  return matches
-    .map((raw) => ({
-      raw,
-      value: parseNumber(raw),
-    }))
-    .filter((item): item is { raw: string; value: number } =>
-      item.value !== null
-    );
-}
-
-function extractKwhFromTsv(tsv: string) {
-  if (!tsv) return null;
-
-  type OcrWord = {
-    lineKey: string;
-    left: number;
-    top: number;
-    width: number;
-    height: number;
-    text: string;
-    confidence: number;
-  };
-
-  const words: OcrWord[] = [];
-
-  for (const line of tsv.split(/\\r?\\n/).slice(1)) {
-    const parts = line.split("\\t");
-    if (parts.length < 12) continue;
-
-    const text = parts.slice(11).join("\\t").trim();
-    const left = Number(parts[6]);
-    const top = Number(parts[7]);
-    const width = Number(parts[8]);
-    const height = Number(parts[9]);
-    const confidence = Number(parts[10]);
-
-    if (!text || !Number.isFinite(left) || !Number.isFinite(top)) continue;
-
-    words.push({
-      lineKey: parts.slice(1, 5).join("-"),
-      left,
-      top,
-      width,
-      height,
-      text,
-      confidence: Number.isFinite(confidence) ? confidence : 0,
-    });
-  }
-
-  const normalize = (value: string) =>
-    value
-      .normalize("NFD")
-      .replace(/[\\u0300-\\u036f]/g, "")
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, " ")
-      .trim();
-
-  const grouped = new Map<string, OcrWord[]>();
-
-  for (const word of words) {
-    const list = grouped.get(word.lineKey) ?? [];
-    list.push(word);
-    grouped.set(word.lineKey, list);
-  }
-
-  for (const lineWords of grouped.values()) {
-    lineWords.sort((a, b) => a.left - b.left);
-
-    const lineText = normalize(lineWords.map((word) => word.text).join(" "));
-    if (!lineText.includes("consumo") || !lineText.includes("kwh")) continue;
-
-    const anchorWords = lineWords.filter((word) => {
-      const value = normalize(word.text);
-      return value.includes("consumo") || value === "kwh";
-    });
-
-    if (!anchorWords.length) continue;
-
-    const left = Math.min(...anchorWords.map((word) => word.left));
-    const right = Math.max(...anchorWords.map((word) => word.left + word.width));
-    const centerX = (left + right) / 2;
-    const headerBottom = Math.max(...anchorWords.map((word) => word.top + word.height));
-
-    const candidates = words
-      .filter((word) => word.top > headerBottom + 2 && word.top < headerBottom + 180)
-      .filter((word) => {
-        const center = word.left + word.width / 2;
-        return Math.abs(center - centerX) <= 80;
-      })
-      .map((word) => ({
-        ...word,
-        value: parseNumber(word.text.replace(/[^0-9.,]/g, "")),
-      }))
-      .filter((word) =>
-        word.value !== null &&
-        word.value >= 20 &&
-        word.value < 2000 &&
-        word.confidence >= 20
-      )
-      .sort((a, b) => a.top - b.top);
-
-    const unique = [
-      ...new Set(
-        candidates
-          .map((candidate) => candidate.value)
-          .filter((value): value is number => value !== null)
-      ),
-    ];
-
-    if (unique.length >= 2) {
-      // La columna puede contener 173 y 180 para un mismo período.
-      // El consumo total es la suma de las franjas, no el primer valor.
-      return String(
-        Number(unique.slice(0, 2).reduce((sum, value) => sum + value, 0).toFixed(2))
-      );
-    }
-
-    if (unique.length === 1) {
-      return String(unique[0]);
-    }
-  }
-
-  return null;
-}
-
-function extractInvoiceData(text: string): Partial<FormState> {
-  const clean = normalizeOcrText(text);
-  const result: Partial<FormState> = {};
-
-  const municipality =
-    clean.match(
-      /municipio\\s*[:\\-]?\\s*(?:\\d{1,4}\\s+)?([A-Za-zÁÉÍÓÚáéíóúÑñ]{3,30})(?=\\s*[-:]?\\s*servicio|\\s+ciclo|$)/i
-    ) ||
-    clean.match(
-      /municipio\\s*[:\\-]?\\s*(?:\\d{1,4}\\s+)?([A-Za-zÁÉÍÓÚáéíóúÑñ]{3,30})/i
-    );
-
-  if (municipality) result.municipality = municipality[1].trim();
-
-  const estrato =
-    clean.match(/(?:estrato|est|clase)\\s*(?:socioeconom[oó]mico)?\\s*[:.]?\\s*0?([1-6])\\b/i);
-
-  if (estrato) result.estrato = estrato[1];
-
-  const days =
-    clean.match(/d[ií]as\\s+facturados\\s*[:.\\-]?\\s*(\\d{1,3})\\b/i) ||
-    clean.match(/d[ií]as\\s+facturados[\\s\\S]{0,50}?(\\d{1,3})\\b/i);
-
-  if (days) result.days = days[1];
-
-  const monthMap: Record<string, string> = {
-    ene: "01", enero: "01",
-    feb: "02", febrero: "02",
-    mar: "03", marzo: "03",
-    abr: "04", abril: "04",
-    may: "05", mayo: "05",
-    jun: "06", junio: "06",
-    jul: "07", julio: "07",
-    ago: "08", agosto: "08",
-    sep: "09", septiembre: "09",
-    oct: "10", octubre: "10",
-    nov: "11", noviembre: "11",
-    dic: "12", diciembre: "12",
-  };
-
-  const periodWithMonth = clean.match(
-    /(?:periodo|per[ií]odo)(?:\\s+facturado)?[\\s:]*(\\d{1,2})\\s*[/\\-]\\s*([A-Za-z]{3,10})\\s*[/\\-]\\s*(\\d{4})/i
+function Aviso({ aviso }: { aviso: AvisoLectura }) {
+  const icono = aviso.nivel === "ok" ? "✓" : aviso.nivel === "revisar" ? "!" : "✕";
+  return (
+    <li className={"aviso aviso-" + aviso.nivel}>
+      <span aria-hidden="true">{icono}</span>
+      <p>{aviso.mensaje}</p>
+    </li>
   );
-
-  const periodNumeric = clean.match(
-    /(?:periodo|per[ií]odo)(?:\\s+facturado)?[\\s:]*(\\d{1,2})\\s*[/\\-]\\s*(\\d{4})/i
-  );
-
-  if (periodWithMonth) {
-    const month = monthMap[periodWithMonth[2].toLowerCase()];
-    if (month) result.period = periodWithMonth[3] + "-" + month;
-  } else if (periodNumeric) {
-    const first = Number(periodNumeric[1]);
-    const second = Number(periodNumeric[2]);
-    const year = first > 12 ? first : second;
-    const month = first > 12 ? second : first;
-
-    if (year >= 2020 && month >= 1 && month <= 12) {
-      result.period = year + "-" + String(month).padStart(2, "0");
-    }
-  }
-
-  // La lectura del medidor es la fuente prioritaria para el consumo.
-  const reading = extractReadingFromText(clean);
-  if (reading) {
-    Object.assign(result, reading);
-  }
-
-  // Para OCR nunca confiamos en el primer número después de "Consumo kWh":
-  // puede ser 10, 173 u otro valor parcial de la tabla tarifaria.
-  // Si no tenemos lecturas, dejamos que la extracción espacial del TSV
-  // proporcione candidatos válidos.
-  if (!result.kwh) {
-    const explicitKwh = clean.match(
-      /(?:consumo\\s+kwh|consumo\\s+actual|consumo)[^\\d]{0,35}(\\d{1,4}(?:[.,]\\d{1,2})?)\\s*kwh\\b/i
-    );
-
-    if (explicitKwh) {
-      const value = parseNumber(explicitKwh[1]);
-      if (value !== null && value >= 20 && value < 2000) {
-        result.kwh = String(value);
-      }
-    }
-  }
-
-  return result;
 }
 
 export default function Home() {
@@ -675,11 +78,12 @@ export default function Home() {
   const [error, setError] = useState("");
   const [invoiceFile, setInvoiceFile] = useState<File | null>(null);
   const [invoicePreview, setInvoicePreview] = useState("");
-  const [invoiceIsPdf, setInvoiceIsPdf] = useState(false);
-  const [ocrText, setOcrText] = useState("");
-  const [ocrStatus, setOcrStatus] = useState("");
-  const [ocrRunning, setOcrRunning] = useState(false);
-  const [ocrFields, setOcrFields] = useState<Partial<FormState>>({});
+  const [estado, setEstado] = useState("");
+  const [leyendo, setLeyendo] = useState(false);
+  const [lectura, setLectura] = useState<ResultadoLectura | null>(null);
+  // Datos completos de la última factura (histórico, promedio, tarifa…)
+  // para las siguientes etapas: diagnóstico, huella y metas.
+  const [, setFacturaActual] = useState<DatosFactura | null>(null);
 
   const set = (key: keyof FormState, value: string) => {
     setForm((f) => ({ ...f, [key]: value }));
@@ -688,12 +92,15 @@ export default function Home() {
 
   const calculatedKwh = useMemo(() => {
     if (form.previous === "" || form.current === "") return null;
-    const a = Number(form.previous);
-    const b = Number(form.current);
-    return Number.isFinite(a) && Number.isFinite(b) && b >= a
-      ? Number((b - a).toFixed(2))
-      : null;
-  }, [form.previous, form.current]);
+    const anterior = Number(form.previous);
+    const actual = Number(form.current);
+    if (!Number.isFinite(anterior) || !Number.isFinite(actual)) return null;
+    return consumoPorLecturas({
+      lecturaAnterior: anterior,
+      lecturaActual: actual,
+      factorMultiplicador: form.factor ? Number(form.factor) : null,
+    });
+  }, [form.previous, form.current, form.factor]);
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -703,8 +110,8 @@ export default function Home() {
     if (!form.period) return setError("Selecciona el periodo.");
     if (Number(form.people) < 1) return setError("El número de personas debe ser mayor o igual a 1.");
     if (!Number.isFinite(kwh) || kwh <= 0) return setError("Ingresa un consumo válido en kWh.");
-    if (form.previous !== "" && form.current !== "" && Number(form.current) < Number(form.previous)) {
-      return setError("La lectura actual no puede ser menor que la anterior.");
+    if (form.previous !== "" && form.current !== "" && calculatedKwh === null) {
+      return setError("Las lecturas no son coherentes. Revisa la lectura anterior y la actual.");
     }
     setSaved(true);
   };
@@ -718,200 +125,38 @@ export default function Home() {
   const openInvoice = () => {
     setScreen("invoice");
     setError("");
-    setOcrStatus("");
   };
 
-  const handleInvoiceFile = (event: ChangeEvent<HTMLInputElement>) => {
+  const handleInvoiceFile = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
+    event.target.value = ""; // permite volver a elegir el mismo archivo
     if (!file) return;
 
     const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
-    const isImage = file.type.startsWith("image/");
-
-    if (!isPdf && !isImage) {
+    if (!isPdf && !file.type.startsWith("image/")) {
       setError("Selecciona una factura en imagen o PDF.");
       return;
     }
 
+    if (invoicePreview) URL.revokeObjectURL(invoicePreview);
     setInvoiceFile(file);
-    setInvoiceIsPdf(isPdf);
     setInvoicePreview(isPdf ? "" : URL.createObjectURL(file));
-    setOcrText("");
-    setOcrFields({});
-    setOcrStatus(
-      isPdf
-        ? "Factura PDF seleccionada. Extrayendo datos directamente del documento…"
-        : "Factura seleccionada. Iniciando lectura automática…"
-    );
+    setLectura(null);
     setError("");
-
-    if (isPdf) {
-      void runPdfExtraction(file);
-    } else {
-      void runOcr(file);
-    }
-  };
-
-  const runPdfExtraction = async (file: File) => {
-    setOcrRunning(true);
-    setError("");
-    setOcrText("");
-    setOcrFields({});
-    setOcrStatus("Extrayendo texto y estructura del PDF…");
+    setLeyendo(true);
+    setEstado("Preparando la factura…");
 
     try {
-      const extractedPdf = await extractInvoicePdf(file);
-      const extracted = extractStructuredPdfData(extractedPdf.text, extractedPdf.items);
-
-      setOcrText(extractedPdf.text);
-      setOcrFields(extracted);
-      setForm((current) => ({ ...current, ...extracted }));
-
-      if (!extracted.kwh) {
-        setOcrStatus("PDF leído, pero no se identificó automáticamente el consumo. Revisa los datos.");
-      } else {
-        setOcrStatus(`Factura PDF leída correctamente · ${extractedPdf.pages} página`);
-      }
-    } catch {
-      setError("No fue posible leer el PDF. Si es una factura escaneada, puedes usar una fotografía.");
-      setOcrStatus("");
+      const resultado = await leerFactura(file, setEstado);
+      setLectura(resultado);
+      setFacturaActual(resultado.datos);
+      setForm((actual) => ({ ...actual, ...formularioDesdeFactura(resultado.datos) }));
+      setEstado("");
+    } catch (e) {
+      setError((e as Error).message || "No fue posible leer la factura. Puedes ingresar los datos a mano.");
+      setEstado("");
     } finally {
-      setOcrRunning(false);
-    }
-  };
-
-  const runOcr = async (sourceFile?: File) => {
-    const fileToProcess = sourceFile ?? invoiceFile;
-
-    if (!fileToProcess) {
-      setError("Primero toma una foto o selecciona una imagen.");
-      return;
-    }
-
-    setOcrRunning(true);
-    setError("");
-    setOcrText("");
-    setOcrStatus("Preparando imagen para lectura…");
-
-    let worker: Awaited<ReturnType<typeof import("tesseract.js").createWorker>> | null = null;
-
-    try {
-      const { createWorker, PSM } = await import("tesseract.js");
-
-      worker = await createWorker("spa", 1, {
-        logger: (message) => {
-          if (message.status === "recognizing text" && typeof message.progress === "number") {
-            setOcrStatus(`Analizando factura… ${Math.round(message.progress * 100)}%`);
-          } else if (message.status) {
-            setOcrStatus("Preparando reconocimiento…");
-          }
-        },
-      });
-
-      // PSM.AUTO es más apropiado para facturas completas con varias zonas.
-      // Tesseract.js documenta que el aumento de resolución puede mejorar
-      // notablemente el reconocimiento y permite ajustar el modo de segmentación.
-      await worker.setParameters({
-        tessedit_pageseg_mode: PSM.AUTO,
-        preserve_interword_spaces: "1",
-        user_defined_dpi: "300",
-      });
-
-      const variants = [
-        { name: "foto original · página completa", mode: "original" as const, psm: PSM.AUTO },
-        { name: "foto original · bloque", mode: "original" as const, psm: PSM.SINGLE_BLOCK },
-        { name: "imagen mejorada · página completa", mode: "gray" as const, psm: PSM.AUTO },
-        { name: "imagen mejorada · bloque", mode: "gray" as const, psm: PSM.SINGLE_BLOCK },
-        { name: "imagen mejorada · texto disperso", mode: "gray" as const, psm: PSM.SPARSE_TEXT },
-        { name: "alto contraste · texto disperso", mode: "binary" as const, psm: PSM.SPARSE_TEXT },
-      ];
-
-      const results: Array<{
-        text: string;
-        confidence: number;
-        score: number;
-        name: string;
-        extracted: Partial<FormState>;
-      }> = [];
-
-      for (let index = 0; index < variants.length; index += 1) {
-        const variant = variants[index];
-        setOcrStatus(`Leyendo factura (${index + 1} de ${variants.length})…`);
-
-        await worker.setParameters({
-          tessedit_pageseg_mode: variant.psm,
-          preserve_interword_spaces: "1",
-          user_defined_dpi: "300",
-        });
-
-        const processed = await preprocessInvoiceImage(fileToProcess, variant.mode);
-        const result = await worker.recognize(
-          processed,
-          {},
-          { tsv: true }
-        );
-        const text = result.data.text?.trim() ?? "";
-        const confidence = typeof result.data.confidence === "number" ? result.data.confidence : 0;
-
-        if (text) {
-          const extracted = extractInvoiceData(text);
-          const spatialKwh = typeof result.data.tsv === "string"
-            ? extractKwhFromTsv(result.data.tsv)
-            : null;
-
-          // Nunca sustituimos un consumo validado por lecturas con un número
-          // obtenido únicamente por posición. La posición se usa como
-          // respaldo, no como fuente principal.
-          if (!extracted.kwh && spatialKwh) {
-            extracted.kwh = spatialKwh;
-          }
-
-          const hasValidatedReading =
-            Boolean(extracted.previous && extracted.current && extracted.kwh) &&
-            Number(extracted.current) - Number(extracted.previous) === Number(extracted.kwh);
-
-          const fieldCount = Object.keys(extracted).length;
-          const score =
-            scoreOcrText(text, confidence) +
-            fieldCount * 25 +
-            (hasValidatedReading ? 220 : 0) +
-            (spatialKwh && Number(spatialKwh) >= 20 ? 60 : 0);
-
-          results.push({
-            text,
-            confidence,
-            score,
-            name: variant.name,
-            extracted,
-          });
-        }
-      }
-
-      if (!results.length) {
-        setOcrStatus("No se encontró texto legible. Intenta con una foto completa, nítida y bien iluminada.");
-        return;
-      }
-
-      results.sort((a, b) => b.score - a.score);
-      const best = results[0];
-
-      setOcrText(best.text);
-      setOcrFields(best.extracted);
-      setForm((current) => ({ ...current, ...best.extracted }));
-
-      if (best.confidence < 55) {
-        setOcrStatus("Lectura realizada con baja confianza. Revisa los datos antes de continuar.");
-      } else {
-        setOcrStatus("Lectura terminada. Revisa y corrige los datos antes de guardar.");
-      }
-    } catch {
-      setError("No fue posible procesar la factura. Puedes corregir los datos manualmente.");
-      setOcrStatus("");
-    } finally {
-      if (worker) {
-        await worker.terminate().catch(() => undefined);
-      }
-      setOcrRunning(false);
+      setLeyendo(false);
     }
   };
 
@@ -922,6 +167,14 @@ export default function Home() {
   };
 
   if (screen === "invoice") {
+    const d = lectura?.datos;
+    const campo = (valor: string | number | null | undefined, sufijo = "") =>
+      valor === null || valor === undefined || valor === "" ? "No detectado" : `${valor}${sufijo}`;
+    const clase = (ok: boolean, principal = false) =>
+      "detected-field " + (principal ? "primary " : "") + (ok ? "detected-ok" : "detected-missing");
+    const confianza = lectura?.confianzaConsumo ?? 0;
+    const nivelConfianza = confianza >= 80 ? "alta" : confianza >= 55 ? "media" : "baja";
+
     return (
       <main className="app-shell">
         <header className="mobile-header">
@@ -933,98 +186,121 @@ export default function Home() {
         <section className="page-content">
           <div className="intro-card">
             <span className="section-kicker">LECTURA DE FACTURA</span>
-            <h2>Fotografía tu factura.</h2>
-            <p>La app leerá el texto de la imagen y propondrá los datos encontrados. Tú siempre los puedes corregir.</p>
+            <h2>Fotografía o sube tu factura.</h2>
+            <p>Funciona con Energía de Pereira, CHEC, Celsia, EPM y otras. ElectriCOs propone los datos y tú los confirmas.</p>
           </div>
 
           <section className="scanner-card">
-            <label className="camera-dropzone">
+            <label className={"camera-dropzone" + (leyendo ? " is-disabled" : "")}>
               <input
                 type="file"
                 accept="image/*,.pdf,application/pdf"
-                capture="environment"
                 onChange={handleInvoiceFile}
+                disabled={leyendo}
               />
               <span className="camera-icon">📷</span>
-              <strong>Tomar foto o seleccionar factura</strong>
-              <small>Foto o PDF. Si el PDF contiene texto digital, ElectriCOs lo leerá directamente.</small>
+              <strong>{invoiceFile ? "Elegir otra factura" : "Tomar foto o seleccionar factura"}</strong>
+              <small>Foto (de frente, completa y con buena luz) o PDF descargado de la empresa.</small>
             </label>
 
-            {invoicePreview && !invoiceIsPdf && (
+            {invoicePreview && (
               <div className="invoice-preview">
                 <img src={invoicePreview} alt="Vista previa de la factura seleccionada" />
               </div>
             )}
 
-            {invoiceFile && invoiceIsPdf && (
+            {invoiceFile && !invoicePreview && (
               <div className="pdf-selected-card">
                 <span className="pdf-icon">PDF</span>
                 <div>
                   <strong>{invoiceFile.name}</strong>
-                  <small>Factura digital · lectura directa del documento</small>
+                  <small>Factura en PDF</small>
                 </div>
               </div>
             )}
 
-            {ocrRunning && (
-              <div className="ocr-status ocr-status-running">
+            {leyendo && (
+              <div className="ocr-status ocr-status-running" role="status">
                 <span className="ocr-spinner" aria-hidden="true" />
-                <span>{ocrStatus || "Analizando factura…"}</span>
+                <span>{estado || "Analizando factura…"}</span>
               </div>
             )}
 
-            {!ocrRunning && ocrStatus && (
-              <div className="ocr-status">
-                <strong>{ocrStatus}</strong>
-                {ocrFields.kwh && <span>Consumo detectado: <b>{ocrFields.kwh} kWh</b></span>}
-              </div>
-            )}
-
-            {ocrText && (
+            {lectura && d && (
               <section className="detected-card" aria-label="Datos detectados">
                 <div className="detected-header">
                   <div>
-                    <span className="section-kicker">LECTURA INTELIGENTE</span>
-                    <h3>Datos encontrados</h3>
+                    <span className="section-kicker">{ETIQUETA_FUENTE[lectura.fuente].toUpperCase()}</span>
+                    <h3>{d.empresaNombre ?? "Datos encontrados"}</h3>
                   </div>
-                  <span className="detected-badge">Revisar</span>
+                  <span className={"detected-badge confianza-" + nivelConfianza}>Confianza {nivelConfianza}</span>
                 </div>
 
                 <div className="detected-grid">
-                  <div className={"detected-field primary " + (ocrFields.kwh ? "detected-ok" : "detected-missing")}>
+                  <div className={clase(d.consumoKwh !== null, true)}>
                     <span>Consumo</span>
-                    <strong>{ocrFields.kwh ? `${ocrFields.kwh} kWh` : "No detectado"}</strong>
+                    <strong>{campo(d.consumoKwh, " kWh")}</strong>
                   </div>
-                  <div className={"detected-field " + (ocrFields.municipality ? "detected-ok" : "detected-missing")}>
+                  <div className={clase(Boolean(d.municipio))}>
                     <span>Municipio</span>
-                    <strong>{ocrFields.municipality || "No detectado"}</strong>
+                    <strong>{campo(d.municipio)}</strong>
                   </div>
-                  <div className={"detected-field " + (ocrFields.estrato ? "detected-ok" : "detected-missing")}>
+                  <div className={clase(d.estrato !== null)}>
                     <span>Estrato</span>
-                    <strong>{ocrFields.estrato || "No detectado"}</strong>
+                    <strong>{campo(d.estrato)}</strong>
                   </div>
-                  <div className={"detected-field " + (ocrFields.period ? "detected-ok" : "detected-missing")}>
+                  <div className={clase(Boolean(d.periodo))}>
                     <span>Periodo</span>
-                    <strong>{ocrFields.period || "No detectado"}</strong>
+                    <strong>{campo(d.periodo)}</strong>
                   </div>
-                  <div className={"detected-field " + (ocrFields.days ? "detected-ok" : "detected-missing")}>
+                  <div className={clase(d.diasFacturados !== null)}>
                     <span>Días facturados</span>
-                    <strong>{ocrFields.days || "No detectado"}</strong>
+                    <strong>{campo(d.diasFacturados)}</strong>
                   </div>
-                  <div className={"detected-field " + (ocrFields.previous && ocrFields.current ? "detected-ok" : "detected-missing")}>
+                  <div className={clase(d.lecturaAnterior !== null && d.lecturaActual !== null)}>
                     <span>Lecturas</span>
                     <strong>
-                      {ocrFields.previous && ocrFields.current
-                        ? `${ocrFields.previous} → ${ocrFields.current}`
+                      {d.lecturaAnterior !== null && d.lecturaActual !== null
+                        ? `${d.lecturaAnterior} → ${d.lecturaActual}`
                         : "No detectadas"}
                     </strong>
                   </div>
+                  {d.promedioKwh !== null && (
+                    <div className="detected-field detected-ok">
+                      <span>Promedio</span>
+                      <strong>{d.promedioKwh} kWh</strong>
+                    </div>
+                  )}
+                  {d.valorKwh !== null && (
+                    <div className="detected-field detected-ok">
+                      <span>Valor del kWh</span>
+                      <strong>${d.valorKwh.toLocaleString("es-CO")}</strong>
+                    </div>
+                  )}
                 </div>
 
-                <div className="detected-note">
-                  <span>✓</span>
-                  <p>Los datos detectados se cargarán en el formulario para que puedas verificarlos y corregirlos.</p>
-                </div>
+                {d.historico.length > 0 && (
+                  <div className="historico-mini" aria-label="Histórico de consumo">
+                    <span className="metric-label">HISTÓRICO EN LA FACTURA</span>
+                    <div className="historico-barras">
+                      {(() => {
+                        const max = Math.max(...d.historico.map((p) => p.kwh), d.consumoKwh ?? 0, 1);
+                        return d.historico.map((p) => (
+                          <div key={p.periodo} className="historico-barra" title={`${p.periodo}: ${p.kwh} kWh`}>
+                            <i style={{ height: `${Math.max(6, (p.kwh / max) * 100)}%` }} />
+                            <small>{p.periodo.slice(5)}</small>
+                          </div>
+                        ));
+                      })()}
+                    </div>
+                  </div>
+                )}
+
+                {lectura.avisos.length > 0 && (
+                  <ul className="avisos">
+                    {lectura.avisos.map((a, i) => <Aviso key={i} aviso={a} />)}
+                  </ul>
+                )}
 
                 <button className="secondary-button full-button" onClick={continueWithExtractedData}>
                   Revisar y completar datos
@@ -1032,10 +308,10 @@ export default function Home() {
               </section>
             )}
 
-            {ocrText && (
+            {lectura?.textoTecnico && (
               <details className="ocr-details">
                 <summary>Ver texto técnico reconocido</summary>
-                <pre>{ocrText}</pre>
+                <pre>{lectura.textoTecnico}</pre>
               </details>
             )}
           </section>
@@ -1044,7 +320,7 @@ export default function Home() {
 
           <div className="info-note">
             <strong>Importante</strong>
-            <span>El reconocimiento automático es una ayuda. Antes de guardar, verifica especialmente el valor de consumo en kWh.</span>
+            <span>La lectura automática es una ayuda. Antes de guardar, verifica el consumo en kWh. La factura no se guarda: solo se usan los datos que confirmes.</span>
           </div>
         </section>
 
@@ -1143,3 +419,4 @@ function Nav({ screen, onHome, onConsumption }: { screen: Screen; onHome: () => 
     <button className="nav-item" disabled><span>↗</span>Progreso</button>
   </nav>;
 }
+
