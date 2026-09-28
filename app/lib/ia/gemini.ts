@@ -50,11 +50,20 @@ export async function generarJsonGemini<T>(opciones: {
   let ultimoError = "";
   for (const modelo of modelos) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelo)}:generateContent`;
-    const r = await fetch(url, {
+    let r = await fetch(url, {
       method: "POST",
       headers: { "content-type": "application/json", "x-goog-api-key": clave },
       body: cuerpo,
     });
+    // Las claves con prefijo "AQ." a veces se rechazan como API key (401) y
+    // Google pide un token "Bearer". Lo intentamos una vez de esa forma.
+    if (r.status === 401 && clave.startsWith("AQ.")) {
+      r = await fetch(url, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${clave}` },
+        body: cuerpo,
+      });
+    }
     if (r.status === 404) {
       ultimoError = `El modelo ${modelo} no existe.`;
       continue;

@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, useEffect, useState } from "react";
+import { ChangeEvent, useEffect, useRef, useState } from "react";
 import { leerFactura } from "../lib/factura/leer-factura";
 import { leerRecuadro, type Recuadro, type ResultadoGuiado } from "../lib/factura/ocr-guiado";
 import type { AvisoLectura, DatosFactura, FuenteLectura, ResultadoLectura } from "../lib/factura/tipos";
@@ -40,6 +40,12 @@ export default function InvoiceScanner({ onUsar }: Props) {
   const [guiaAbierta, setGuiaAbierta] = useState(false);
   const [recuadro, setRecuadro] = useState<Recuadro | null>(null);
   const [guiado, setGuiado] = useState<ResultadoGuiado | null>(null);
+  const refGuia = useRef<HTMLElement>(null);
+
+  // Al abrir la lectura guiada, llevar la pantalla hasta ella.
+  useEffect(() => {
+    if (guiaAbierta) refGuia.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [guiaAbierta]);
 
   // Libera la memoria de la vista previa al salir o al cambiar de foto.
   useEffect(() => () => { if (vistaPrevia) URL.revokeObjectURL(vistaPrevia); }, [vistaPrevia]);
@@ -175,6 +181,26 @@ export default function InvoiceScanner({ onUsar }: Props) {
           </div>
         )}
 
+        {vistaPrevia && guiaAbierta && (
+          <section className="guia-card" aria-label="Lectura guiada" ref={refGuia}>
+            <span className="section-kicker">LECTURA GUIADA · SIN INTERNET</span>
+            <h3>{lectura && lectura.confianzaConsumo < 55 ? "No pudimos leer el consumo. Ayúdanos:" : "Encierra la fila del medidor"}</h3>
+            <p>
+              Arrastra el dedo sobre la foto para encerrar la fila <b>Activa</b>: la que tiene el número del medidor, la lectura
+              actual, la anterior y el consumo. Deja un poco de margen.
+            </p>
+            <SelectorRecuadro src={vistaPrevia} valor={recuadro} onCambio={setRecuadro} />
+            <div className="button-row">
+              <button className="secondary-button" type="button" onClick={() => setGuiaAbierta(false)} disabled={leyendo}>
+                Cancelar
+              </button>
+              <button className="primary-button" type="button" onClick={leerFilaMedidor} disabled={!recuadro || leyendo}>
+                Leer esta fila
+              </button>
+            </div>
+          </section>
+        )}
+
         {lectura && d && (
           <section className="detected-card" aria-label="Datos detectados">
             <div className="detected-header">
@@ -215,7 +241,7 @@ export default function InvoiceScanner({ onUsar }: Props) {
               {d.valorKwh !== null && (
                 <div className="detected-field detected-ok">
                   <span>Valor del kWh</span>
-                  <strong>${d.valorKwh.toLocaleString("es-CO")}</strong>
+                  <strong>${d.valorKwh.toLocaleString("es-CO", { maximumFractionDigits: 2 })}</strong>
                 </div>
               )}
               {d.historico.length > 0 && (
@@ -242,26 +268,6 @@ export default function InvoiceScanner({ onUsar }: Props) {
           <button className="secondary-button full-button" type="button" onClick={() => setGuiaAbierta(true)}>
             {lectura.confianzaConsumo >= 80 ? "Corregir leyendo la fila del medidor" : "Leer la fila del medidor"}
           </button>
-        )}
-
-        {vistaPrevia && guiaAbierta && (
-          <section className="guia-card" aria-label="Lectura guiada">
-            <span className="section-kicker">LECTURA GUIADA · SIN INTERNET</span>
-            <h3>Encierra la fila del medidor</h3>
-            <p>
-              Arrastra el dedo sobre la foto para encerrar la fila <b>Activa</b>: la que tiene el número del medidor, la lectura
-              actual, la anterior y el consumo. Deja un poco de margen.
-            </p>
-            <SelectorRecuadro src={vistaPrevia} valor={recuadro} onCambio={setRecuadro} />
-            <div className="button-row">
-              <button className="secondary-button" type="button" onClick={() => setGuiaAbierta(false)} disabled={leyendo}>
-                Cancelar
-              </button>
-              <button className="primary-button" type="button" onClick={leerFilaMedidor} disabled={!recuadro || leyendo}>
-                Leer esta fila
-              </button>
-            </div>
-          </section>
         )}
 
         {guiado && (

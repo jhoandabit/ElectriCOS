@@ -42,19 +42,29 @@ async function pedirIa(archivo: ArchivoPreparado, textoPdf?: string): Promise<Re
   return json as RespuestaServidor;
 }
 
+const AVISO_SIN_IA: AvisoLectura = {
+  nivel: "revisar",
+  campo: "general",
+  mensaje: "La lectura con IA no está disponible. Se usó la lectura sin internet.",
+};
+
 function terminar(
   datos: DatosFactura,
   fuente: FuenteLectura,
   avisosExtra: AvisoLectura[],
-  textoTecnico?: string
+  textoTecnico?: string,
+  iaFallo = false
 ): ResultadoLectura {
   const { datos: completos, avisos, confianzaConsumo } = validarYCompletar(datos);
-  return { datos: completos, fuente, avisos: [...avisosExtra, ...avisos], confianzaConsumo, textoTecnico };
+  // Si la lectura sin IA salió bien, avisar del fallo de la IA solo confunde.
+  const extra = iaFallo && confianzaConsumo < 80 ? [AVISO_SIN_IA, ...avisosExtra] : avisosExtra;
+  return { datos: completos, fuente, avisos: [...extra, ...avisos], confianzaConsumo, textoTecnico };
 }
 
 export async function leerFactura(archivo: File, alProgresar: AlProgresar): Promise<ResultadoLectura> {
   const avisos: AvisoLectura[] = [];
   const conIa = await iaDisponible();
+  let iaFallo = false;
 
   if (esPdf(archivo)) {
     alProgresar("Abriendo el PDF…");
@@ -72,18 +82,19 @@ export async function leerFactura(archivo: File, alProgresar: AlProgresar): Prom
         return terminar(datos, "ia", avisos, pdf.texto || undefined);
       } catch (e) {
         iaDisponibleCache = Promise.resolve(false);
-        avisos.push({ nivel: "revisar", campo: "general", mensaje: (e as Error).message });
+        iaFallo = true;
+        console.warn("[factura] IA no disponible:", (e as Error).message);
       }
     }
 
     if (local) {
       alProgresar("Analizando el texto del PDF…");
-      return terminar(local, "pdf-texto", avisos, pdf.texto);
+      return terminar(local, "pdf-texto", avisos, pdf.texto, iaFallo);
     }
 
     alProgresar("El PDF es una imagen escaneada. Leyendo sin conexión…");
     const texto = await ocrLocal(pdf.primeraPagina, alProgresar);
-    return terminar(extraerDeTexto(texto), "ocr-local", avisos, texto);
+    return terminar(extraerDeTexto(texto), "ocr-local", avisos, texto, iaFallo);
   }
 
   if (!archivo.type.startsWith("image/")) {
@@ -104,7 +115,8 @@ export async function leerFactura(archivo: File, alProgresar: AlProgresar): Prom
     } catch (e) {
       // No volvemos a intentar la IA en esta sesión: evita esperas inútiles.
       iaDisponibleCache = Promise.resolve(false);
-      avisos.push({ nivel: "revisar", campo: "general", mensaje: (e as Error).message });
+      iaFallo = true;
+      console.warn("[factura] IA no disponible:", (e as Error).message);
     }
   }
 
@@ -114,5 +126,5 @@ export async function leerFactura(archivo: File, alProgresar: AlProgresar): Prom
   if (!texto) {
     avisos.push({ nivel: "error", campo: "general", mensaje: "No se encontró texto en la foto. Usa la lectura guiada o toma la foto de frente y con buena luz." });
   }
-  return terminar(extraerDeTexto(texto), "ocr-local", avisos, texto);
+  return terminar(extraerDeTexto(texto), "ocr-local", avisos, texto, iaFallo);
 }
