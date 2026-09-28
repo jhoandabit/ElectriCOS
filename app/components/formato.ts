@@ -23,3 +23,9 @@ export function mesActual() {
   const hoy = new Date();
   return `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, "0")}`;
 }
+
+/** "2026-09" → "sep 2026" (para tablas angostas) */
+export function mesMedio(periodo: string) {
+  const [anio, mes] = periodo.split("-").map(Number);
+  return `${CORTOS[mes - 1] ?? "?"} ${anio}`;
+}

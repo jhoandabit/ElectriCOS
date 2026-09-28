@@ -19,9 +19,12 @@ export function consumoPorLecturas(datos: Pick<DatosFactura, "lecturaAnterior" |
 
   if (b >= a) return redondear((b - a) * factor);
 
-  // El medidor dio la vuelta (p. ej. 99 950 → 00 120).
+  // El medidor dio la vuelta (p. ej. 99 950 → 00 120): solo si la anterior
+  // estaba cerca del máximo y la actual cerca de cero. Si no, las lecturas
+  // están al revés o mal escritas (500 → 400 NO son 900 kWh).
   const digitos = String(Math.trunc(a)).length;
   const tope = 10 ** digitos;
+  if (a < tope * 0.9 || b > tope * 0.1) return null;
   const diferencia = tope - a + b;
   return diferencia > 0 && diferencia < KWH_MAX ? redondear(diferencia * factor) : null;
 }

@@ -64,4 +64,7 @@ test("números con formato colombiano", () => {
 
 test("medidor que dio la vuelta", () => {
   assert.equal(consumoPorLecturas({ lecturaAnterior: 99950, lecturaActual: 120, factorMultiplicador: 1 }), 170);
+  // Lecturas al revés no son una vuelta del medidor (error encontrado al probar la interfaz)
+  assert.equal(consumoPorLecturas({ lecturaAnterior: 500, lecturaActual: 400, factorMultiplicador: 1 }), null);
+  assert.equal(consumoPorLecturas({ lecturaAnterior: 19840, lecturaActual: 19487, factorMultiplicador: 1 }), null);
 });

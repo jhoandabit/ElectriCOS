@@ -1,7 +1,7 @@
 import { calcularLineaBase, evaluarAvance, huellaKg, kwhMesNormalizado, redondear } from "../lib/calculos/motor";
 import type { Parametro } from "../lib/calculos/parametros";
 import { paraMotor, type Hogar, type Meta, type RegistroConsumo } from "../lib/supabase/datos";
-import { nombreMes } from "./formato";
+import { mesMedio, nombreMes } from "./formato";
 import GraficoConsumo from "./GraficoConsumo";
 import Recomendaciones from "./Recomendaciones";
 
@@ -65,8 +65,8 @@ export default function ProgresoScreen({ hogar, registros, meta, parametros }: P
             <tr>
               <th scope="col">Mes</th>
               <th scope="col">kWh</th>
-              <th scope="col">kWh/30 d</th>
-              <th scope="col">kg CO₂e</th>
+              <th scope="col"><abbr title="Consumo llevado a 30 días">30 d</abbr></th>
+              <th scope="col"><abbr title="Huella en kg de CO₂ equivalente">kg CO₂e</abbr></th>
               {meta && <th scope="col">Meta</th>}
             </tr>
           </thead>
@@ -76,7 +76,7 @@ export default function ProgresoScreen({ hogar, registros, meta, parametros }: P
               const evaluado = avance.find((a) => a.periodo === r.periodo);
               return (
                 <tr key={r.id}>
-                  <th scope="row">{nombreMes(r.periodo)}</th>
+                  <th scope="row">{mesMedio(r.periodo)}</th>
                   <td>{redondear(r.consumo_kwh)}</td>
                   <td>{redondear(n)}</td>
                   <td>{redondear(huellaKg(r.consumo_kwh, factor))}</td>
