@@ -55,20 +55,30 @@ export default function InvoiceScanner({ onUsar }: Props) {
   // Libera la memoria de la vista previa al salir o al cambiar de foto.
   useEffect(() => () => { if (vistaPrevia) URL.revokeObjectURL(vistaPrevia); }, [vistaPrevia]);
 
-  const elegirArchivo = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    event.target.value = ""; // permite volver a elegir el mismo archivo
-    if (!file) return;
+  const [partes, setPartes] = useState(0);
 
-    const esPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
-    if (!esPdf && !file.type.startsWith("image/")) {
+  const esPdfArchivo = (f: File) => f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf");
+
+  /**
+   * Lee una o varias fotos. Varias fotos se tratan como PARTES de la misma
+   * factura (encabezado, energía, resumen…): sus textos se unen.
+   * Con `sumar`, se agregan a lo que ya se leyó.
+   */
+  const leerArchivos = async (files: File[], sumar: boolean) => {
+    if (!files.length) return;
+    const pdf = files.find(esPdfArchivo);
+    if (pdf && files.length > 1) {
+      setError("Elige un solo PDF, o varias fotos de la misma factura.");
+      return;
+    }
+    if (!pdf && files.some((f) => !f.type.startsWith("image/"))) {
       setError("Selecciona una foto o un PDF de la factura.");
       return;
     }
 
-    setArchivo(file);
-    setVistaPrevia(esPdf ? "" : URL.createObjectURL(file));
-    setLectura(null);
+    const ultimo = files[files.length - 1];
+    setArchivo(ultimo);
+    setVistaPrevia(pdf ? "" : URL.createObjectURL(ultimo));
     setGuiaAbierta(false);
     setRecuadro(null);
     setGuiado(null);
@@ -77,16 +87,39 @@ export default function InvoiceScanner({ onUsar }: Props) {
     setEstado("Preparando la factura…");
 
     try {
-      const resultado = await leerFactura(file, setEstado);
+      let previo = sumar && lectura?.fuente === "ocr-local" ? lectura.textoTecnico ?? "" : "";
+      let resultado: ResultadoLectura | null = null;
+      let n = sumar ? partes : 0;
+      for (const [i, file] of files.entries()) {
+        const aviso = files.length > 1 ? `Parte ${i + 1} de ${files.length}: ` : sumar ? `Parte ${n + 1}: ` : "";
+        resultado = await leerFactura(file, (m) => setEstado(aviso + m), previo);
+        previo = resultado.textoTecnico ?? previo;
+        n += 1;
+      }
+      if (!resultado) return;
+      setPartes(pdf ? 0 : n);
+      if (n > 1) {
+        resultado = {
+          ...resultado,
+          avisos: [{ nivel: "ok", campo: "general", mensaje: `Se unieron ${n} partes de la factura.` }, ...resultado.avisos],
+        };
+      }
       setLectura(resultado);
       setMetodo(resultado.fuente);
-      if (!esPdf && resultado.confianzaConsumo < 80) setGuiaAbierta(true);
+      if (!pdf && resultado.confianzaConsumo < 80 && n === 1) setGuiaAbierta(true);
     } catch (e) {
       setError((e as Error).message || "No fue posible leer la factura. Puedes ingresar los datos a mano.");
     } finally {
       setLeyendo(false);
       setEstado("");
     }
+  };
+
+  const elegirArchivo = (sumar: boolean) => (event: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? []);
+    event.target.value = ""; // permite volver a elegir el mismo archivo
+    if (!sumar) setLectura(null);
+    void leerArchivos(files, sumar);
   };
 
   const leerFilaMedidor = async () => {
@@ -153,24 +186,26 @@ export default function InvoiceScanner({ onUsar }: Props) {
       <section className="scanner-card">
         <div className={"fuente-grid" + (leyendo ? " is-disabled" : "")}>
           <label className="fuente-boton">
-            <input type="file" accept="image/*" capture="environment" onChange={elegirArchivo} disabled={leyendo} />
+            <input type="file" accept="image/*" capture="environment" onChange={elegirArchivo(false)} disabled={leyendo} />
             <span aria-hidden="true">📷</span>
             <strong>Tomar foto</strong>
           </label>
           <label className="fuente-boton">
-            <input type="file" accept="image/*" onChange={elegirArchivo} disabled={leyendo} />
+            <input type="file" accept="image/*" multiple onChange={elegirArchivo(false)} disabled={leyendo} />
             <span aria-hidden="true">🖼️</span>
             <strong>Galería</strong>
           </label>
           <label className="fuente-boton">
-            <input type="file" accept="application/pdf,.pdf" onChange={elegirArchivo} disabled={leyendo} />
+            <input type="file" accept="application/pdf,.pdf" onChange={elegirArchivo(false)} disabled={leyendo} />
             <span aria-hidden="true">📄</span>
             <strong>PDF</strong>
           </label>
         </div>
         <small className="fuente-ayuda">
           El PDF que descargas de la empresa es lo más preciso. Si usas foto: de frente, completa, con buena luz y sin
-          sombras. La foto se lee dentro de tu celular y no se envía a ningún servidor.
+          sombras. Si la factura no se ve bien en una sola foto, tómala <b>por partes</b> (encabezado, energía,
+          resumen): en Galería puedes elegir varias a la vez. La foto se lee dentro de tu celular y no se envía a
+          ningún servidor.
         </small>
 
         {vistaPrevia && !guiaAbierta && (
@@ -281,6 +316,13 @@ export default function InvoiceScanner({ onUsar }: Props) {
               Revisar y guardar
             </button>
           </section>
+        )}
+
+        {vistaPrevia && lectura && !leyendo && !guiaAbierta && (
+          <label className="secondary-button full-button boton-archivo">
+            <input type="file" accept="image/*" multiple onChange={elegirArchivo(true)} />
+            ➕ Agregar otra parte de la factura (foto){partes > 1 ? ` · ${partes} partes leídas` : ""}
+          </label>
         )}
 
         {vistaPrevia && lectura && !leyendo && !guiaAbierta && (

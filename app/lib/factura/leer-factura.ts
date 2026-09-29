@@ -42,7 +42,12 @@ async function leerImagen(imagen: HTMLCanvasElement, alProgresar: AlProgresar): 
   return texto;
 }
 
-export async function leerFactura(archivo: File, alProgresar: AlProgresar): Promise<ResultadoLectura> {
+/**
+ * Lee una factura. `textoPrevio` es el texto de las partes ya leídas de la
+ * MISMA factura (cuando la persona la fotografía por partes: encabezado,
+ * energía, resumen…). Los textos se unen y se analizan juntos.
+ */
+export async function leerFactura(archivo: File, alProgresar: AlProgresar, textoPrevio = ""): Promise<ResultadoLectura> {
   const avisos: AvisoLectura[] = [];
 
   if (esPdf(archivo)) {
@@ -62,8 +67,9 @@ export async function leerFactura(archivo: File, alProgresar: AlProgresar): Prom
 
   alProgresar("Preparando la foto…");
   const foto = await prepararFoto(archivo, 2000);
-  const texto = await leerImagen(foto.canvas, alProgresar);
-  if (!texto.trim()) {
+  const nuevo = await leerImagen(foto.canvas, alProgresar);
+  const texto = textoPrevio ? `${textoPrevio}\n${nuevo}` : nuevo;
+  if (!nuevo.trim()) {
     avisos.push({
       nivel: "error",
       campo: "general",

@@ -127,6 +127,32 @@ function girar90(origen: HTMLCanvasElement, horario: boolean) {
   return c;
 }
 
+/** Texto oscuro → negro; fondo (blanco o color de la barra) → blanco. */
+function blancoYNegro(origen: HTMLCanvasElement) {
+  const c = document.createElement("canvas");
+  c.width = origen.width;
+  c.height = origen.height;
+  const ctx = c.getContext("2d");
+  if (!ctx) return origen;
+  ctx.drawImage(origen, 0, 0);
+  const img = ctx.getImageData(0, 0, c.width, c.height);
+  const p = img.data;
+  for (let i = 0; i < p.length; i += 4) {
+    const v = 0.299 * p[i] + 0.587 * p[i + 1] + 0.114 * p[i + 2] < 125 ? 0 : 255;
+    p[i] = p[i + 1] = p[i + 2] = v;
+  }
+  ctx.putImageData(img, 0, 0);
+  return c;
+}
+
+/**
+ * Entre lecturas distintas de la misma barra, la que tiene más dígitos:
+ * el error típico es perder uno ("121" → "12"), no inventarlo.
+ */
+export function elegirLectura(valores: number[]): number {
+  return [...valores].sort((a, b) => String(b).length - String(a).length)[0];
+}
+
 type Rotulo = { texto: string; cx: number; y0: number; cy: number };
 
 /**
@@ -200,7 +226,8 @@ export async function leerGraficoDeBarras(
     }
     const sh = Math.round(r.y0 - 2 - sy);
     if (sw < 8 || sh < 8) return null;
-    const factor = Math.min(3, Math.max(1, 48 / sw));
+    // En fotos pequeñas el texto de lado mide pocos píxeles: se amplía más.
+    const factor = Math.min(4, Math.max(1, 64 / sw));
     const recorte = document.createElement("canvas");
     recorte.width = Math.round(sw * factor);
     recorte.height = Math.round(sh * factor);
@@ -208,12 +235,33 @@ export async function leerGraficoDeBarras(
     if (!ctx) return null;
     ctx.imageSmoothingQuality = "high";
     ctx.drawImage(imagen, sx, sy, sw, sh, 0, 0, recorte.width, recorte.height);
-    for (const horario of [true, false]) {
-      const leido = (await reconocer(girar90(recorte, horario))).map((c) => c.texto).join(" ");
-      const m = leido.match(/(\d{1,4})\s*k\s*w/i) ?? leido.match(/\b(\d{2,4})\b/);
-      if (m) return Number(m[1]);
+
+    // Varios intentos (imagen tal cual y en blanco y negro, girada a un lado
+    // y al otro). Se vota: cuando dos intentos coinciden, ese es el valor.
+    // Así "121 kWh" no queda como "12" por un intento que cortó un dígito.
+    const bn = blancoYNegro(recorte);
+    const intentos: [HTMLCanvasElement, boolean][] = [
+      [recorte, true],
+      [bn, true],
+      [recorte, false],
+      [bn, false],
+    ];
+    const conKwh: number[] = [];
+    let suelto: number | null = null;
+    for (const [lienzo, horario] of intentos) {
+      const leido = (await reconocer(girar90(lienzo, horario))).map((c) => c.texto).join(" ");
+      const m = leido.match(/(\d{1,4})\s*k\s*w/i);
+      if (m) {
+        const v = Number(m[1]);
+        if (conKwh.includes(v)) return v;
+        conKwh.push(v);
+      } else if (suelto === null) {
+        const n = leido.match(/\b(\d{2,4})\b/);
+        if (n) suelto = Number(n[1]);
+      }
     }
-    return null;
+    if (conKwh.length) return elegirLectura(conKwh);
+    return suelto;
   };
 
   const valores: (number | null)[] = [];
