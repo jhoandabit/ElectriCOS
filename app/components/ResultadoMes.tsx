@@ -215,10 +215,18 @@ export default function ResultadoMes({ registro, hogar, registros, parametros }:
       </div>
 
       <div className="tarjetas">
-        {tarjetas.map((t) => {
+        {tarjetas.map((t, i) => {
           const abiertaEsta = abierta === t.id;
+          // La tarjeta abierta ocupa todo el ancho de SU fila. Si está en la
+          // columna derecha (i impar), se pone antes de su vecina izquierda
+          // para que no quede un hueco ni baje de fila.
+          const orden = abiertaEsta && i % 2 === 1 ? (i - 1) * 2 - 1 : i * 2;
           return (
-            <article key={t.id} className={"tarjeta" + (abiertaEsta ? " abierta" : "") + (t.tono ? ` tono-${t.tono}` : "")}>
+            <article
+              key={t.id}
+              style={{ order: orden }}
+              className={"tarjeta" + (abiertaEsta ? " abierta" : "") + (t.tono ? ` tono-${t.tono}` : "")}
+            >
               <button
                 type="button"
                 className="tarjeta-cara"
