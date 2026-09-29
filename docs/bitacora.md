@@ -130,6 +130,19 @@
 
 ---
 
+### E13 · Celsia con foto y el iPhone que se recargaba (29 sep)
+
+- **Síntoma 1:** en foto, las barras bajas del gráfico de Celsia salían mal ("121" → "12") o no salían.
+  **Causa:** el primer dígito quedaba pegado al borde del recorte girado. **Arreglo:** margen blanco,
+  versión con más contraste y votación entre 3 lecturas ("12" cuenta como apoyo de "121").
+- **Síntoma 2:** una sola foto de toda la factura queda con letra muy pequeña. **Arreglo:** la factura se
+  puede leer **por partes** (varias fotos a la vez o "Agregar otra parte"); los textos se unen.
+- **Síntoma 3 (iPhone):** al volver de la cámara la app regresaba a Inicio; la segunda vez la página se caía.
+  **Causa:** Safari da poca memoria por pestaña; el lector estaba precargado y usaba WebGPU.
+  **Arreglo:** en iPhone, WebAssembly de un hilo, sin precarga, foto de máx. 1700 px, y si Safari recarga
+  la página la app vuelve a "Leer factura" con un aviso.
+- **Síntoma 4:** el aviso "¿Borrar…?" tardaba en aparecer. **Arreglo:** confirmación dentro de la lista.
+
 ## Decisiones
 
 | Fecha | Decisión | Por qué |
