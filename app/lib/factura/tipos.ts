@@ -1,8 +1,8 @@
 // Modelo único de datos de una factura de energía.
-// Todas las fuentes (IA, texto del PDF, OCR local, ingreso manual)
+// Todas las fuentes (texto del PDF, OCR en el celular, ingreso manual)
 // producen este mismo objeto, y el motor de cálculo solo lee este modelo.
 
-export type FuenteLectura = "ia" | "pdf-texto" | "ocr-local" | "manual";
+export type FuenteLectura = "pdf-texto" | "ocr-local" | "manual";
 
 export type EmpresaId =
   | "energia-pereira"

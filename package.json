@@ -3,7 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "predev": "node scripts/preparar-ocr.mjs",
     "dev": "next dev",
+    "prebuild": "node scripts/preparar-ocr.mjs",
     "build": "next build",
     "start": "next start",
     "test": "tsx --test tests/*.test.ts"
@@ -13,8 +15,8 @@
     "react": "19.1.1",
     "react-dom": "19.1.1",
     "@supabase/supabase-js": "2.57.4",
-    "tesseract.js": "7.0.0",
-    "pdfjs-dist": "6.3.289"
+    "pdfjs-dist": "6.3.289",
+    "@paddleocr/paddleocr-js": "0.4.2"
   },
   "devDependencies": {
     "typescript": "5.9.2",

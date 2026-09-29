@@ -1,34 +1,12 @@
 "use client";
 
 // Lectura de archivos en el navegador: texto de PDFs, render de páginas
-// y compresión de fotos antes de enviarlas a la IA.
+// y fotos redimensionadas para el lector de texto. Nada sale del celular.
 
 const LADO_MAXIMO = 2000; // px: suficiente para leer una factura, liviano para subir
 
-export type ArchivoPreparado = {
-  /** Base64 sin el prefijo data: */
-  base64: string;
-  mime: "image/jpeg" | "application/pdf";
-  bytes: number;
-};
-
 export function esPdf(archivo: File) {
   return archivo.type === "application/pdf" || archivo.name.toLowerCase().endsWith(".pdf");
-}
-
-function blobABase64(blob: Blob) {
-  return new Promise<string>((resolve, reject) => {
-    const lector = new FileReader();
-    lector.onload = () => resolve(String(lector.result).split(",")[1] ?? "");
-    lector.onerror = () => reject(new Error("No se pudo leer el archivo."));
-    lector.readAsDataURL(blob);
-  });
-}
-
-function canvasABlob(canvas: HTMLCanvasElement, calidad = 0.85) {
-  return new Promise<Blob>((resolve, reject) => {
-    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("No se pudo generar la imagen."))), "image/jpeg", calidad);
-  });
 }
 
 export async function cargarImagen(archivo: Blob): Promise<ImageBitmap | HTMLImageElement> {
@@ -56,11 +34,11 @@ export function dimensiones(imagen: ImageBitmap | HTMLImageElement) {
   };
 }
 
-/** Reduce la foto (por defecto a máx. 2000 px) y la convierte a JPEG. */
+/** Reduce la foto (por defecto a máx. 2000 px) y la dibuja en un lienzo. */
 export async function prepararFoto(
   archivo: File,
   ladoMaximo = LADO_MAXIMO
-): Promise<ArchivoPreparado & { canvas: HTMLCanvasElement }> {
+): Promise<{ canvas: HTMLCanvasElement }> {
   const imagen = await cargarImagen(archivo);
   const { ancho, alto } = dimensiones(imagen);
   const escala = Math.min(1, ladoMaximo / Math.max(ancho, alto));
@@ -73,8 +51,7 @@ export async function prepararFoto(
   ctx.imageSmoothingQuality = "high";
   ctx.drawImage(imagen, 0, 0, canvas.width, canvas.height);
 
-  const blob = await canvasABlob(canvas);
-  return { base64: await blobABase64(blob), mime: "image/jpeg", bytes: blob.size, canvas };
+  return { canvas };
 }
 
 async function cargarPdfjs() {
@@ -88,7 +65,7 @@ export type PdfLeido = {
   paginas: number;
   /** true si el PDF casi no tiene texto (factura escaneada) */
   escaneado: boolean;
-  /** Primera página como imagen, para la IA o el OCR */
+  /** Primera página como imagen, para el lector de texto (PDF escaneado) */
   primeraPagina: HTMLCanvasElement;
 };
 
@@ -138,14 +115,4 @@ export async function leerPdf(archivo: File): Promise<PdfLeido> {
     escaneado: texto.replace(/\s/g, "").length < 80,
     primeraPagina: canvas,
   };
-}
-
-/** PDF original si es liviano; si no, la primera página como JPEG. */
-export async function prepararPdfParaIa(archivo: File, pdf: PdfLeido): Promise<ArchivoPreparado> {
-  const LIMITE = 3 * 1024 * 1024; // Vercel acepta ~4.5 MB por petición; base64 suma ~33 %
-  if (archivo.size <= LIMITE) {
-    return { base64: await blobABase64(archivo), mime: "application/pdf", bytes: archivo.size };
-  }
-  const blob = await canvasABlob(pdf.primeraPagina);
-  return { base64: await blobABase64(blob), mime: "image/jpeg", bytes: blob.size };
 }

@@ -3,6 +3,7 @@
 import { ChangeEvent, useEffect, useRef, useState } from "react";
 import { leerFactura } from "../lib/factura/leer-factura";
 import { leerRecuadro, type Recuadro, type ResultadoGuiado } from "../lib/factura/ocr-guiado";
+import { precargarLector } from "../lib/factura/ocr-paddle";
 import type { AvisoLectura, DatosFactura, FuenteLectura, ResultadoLectura } from "../lib/factura/tipos";
 import { validarYCompletar } from "../lib/factura/validar";
 import SelectorRecuadro from "./SelectorRecuadro";
@@ -10,9 +11,8 @@ import SelectorRecuadro from "./SelectorRecuadro";
 export type MetodoLectura = FuenteLectura | "guiada";
 
 const ETIQUETA_FUENTE: Record<MetodoLectura, string> = {
-  ia: "Lectura inteligente",
   "pdf-texto": "Texto del PDF",
-  "ocr-local": "Lectura sin conexión",
+  "ocr-local": "Lectura de la foto",
   guiada: "Lectura guiada",
   manual: "Manual",
 };
@@ -47,6 +47,11 @@ export default function InvoiceScanner({ onUsar }: Props) {
     if (guiaAbierta) refGuia.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, [guiaAbierta]);
 
+  // Empieza a descargar el lector de fotos mientras la persona elige el archivo.
+  useEffect(() => {
+    precargarLector();
+  }, []);
+
   // Libera la memoria de la vista previa al salir o al cambiar de foto.
   useEffect(() => () => { if (vistaPrevia) URL.revokeObjectURL(vistaPrevia); }, [vistaPrevia]);
 
@@ -75,7 +80,7 @@ export default function InvoiceScanner({ onUsar }: Props) {
       const resultado = await leerFactura(file, setEstado);
       setLectura(resultado);
       setMetodo(resultado.fuente);
-      if (!esPdf && resultado.fuente !== "ia" && resultado.confianzaConsumo < 80) setGuiaAbierta(true);
+      if (!esPdf && resultado.confianzaConsumo < 80) setGuiaAbierta(true);
     } catch (e) {
       setError((e as Error).message || "No fue posible leer la factura. Puedes ingresar los datos a mano.");
     } finally {
@@ -155,7 +160,8 @@ export default function InvoiceScanner({ onUsar }: Props) {
           </label>
         </div>
         <small className="fuente-ayuda">
-          El PDF que descargas de la empresa es lo más preciso. Si usas foto: de frente, completa, con buena luz y sin sombras.
+          El PDF que descargas de la empresa es lo más preciso. Si usas foto: de frente, completa, con buena luz y sin
+          sombras. La foto se lee dentro de tu celular y no se envía a ningún servidor.
         </small>
 
         {vistaPrevia && !guiaAbierta && (
@@ -183,7 +189,7 @@ export default function InvoiceScanner({ onUsar }: Props) {
 
         {vistaPrevia && guiaAbierta && (
           <section className="guia-card" aria-label="Lectura guiada" ref={refGuia}>
-            <span className="section-kicker">LECTURA GUIADA · SIN INTERNET</span>
+            <span className="section-kicker">LECTURA GUIADA</span>
             <h3>{lectura && lectura.confianzaConsumo < 55 ? "No pudimos leer el consumo. Ayúdanos:" : "Encierra la fila del medidor"}</h3>
             <p>
               Arrastra el dedo sobre la foto para encerrar la fila <b>Activa</b>: la que tiene el número del medidor, la lectura

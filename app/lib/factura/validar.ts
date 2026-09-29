@@ -140,35 +140,3 @@ export function validarYCompletar(entrada: DatosFactura): {
 
   return { datos, avisos, confianzaConsumo: confianza };
 }
-
-/**
- * Combina dos lecturas del mismo documento. La principal gana en cada
- * campo, excepto cuando la secundaria tiene un consumo que sí cuadra con
- * las lecturas y la principal no.
- */
-export function combinarLecturas(principal: DatosFactura, secundaria: DatosFactura): DatosFactura {
-  const r: DatosFactura = { ...principal };
-
-  (Object.keys(secundaria) as (keyof DatosFactura)[]).forEach((clave) => {
-    const valorPrincipal = r[clave];
-    const vacio =
-      valorPrincipal === null ||
-      (Array.isArray(valorPrincipal) && valorPrincipal.length === 0) ||
-      (clave === "empresa" && valorPrincipal === "otra");
-    if (vacio) (r as Record<string, unknown>)[clave] = secundaria[clave];
-  });
-
-  const cuadra = (d: DatosFactura) => {
-    const c = consumoPorLecturas(d);
-    return c !== null && d.consumoKwh !== null && Math.abs(c - d.consumoKwh) <= Math.max(1, c * 0.01);
-  };
-
-  if (!cuadra(r) && cuadra(secundaria)) {
-    r.lecturaAnterior = secundaria.lecturaAnterior;
-    r.lecturaActual = secundaria.lecturaActual;
-    r.factorMultiplicador = secundaria.factorMultiplicador;
-    r.consumoKwh = secundaria.consumoKwh;
-  }
-
-  return r;
-}
