@@ -12,5 +12,13 @@ export default function manifest(): MetadataRoute.Manifest {
     lang: "es",
     orientation: "portrait",
     categories: ["education", "utilities"],
+    id: "/",
+    scope: "/",
+    icons: [
+      { src: "/iconos/icono-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+      { src: "/iconos/icono-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+      { src: "/iconos/icono-192-maskable.png", sizes: "192x192", type: "image/png", purpose: "maskable" },
+      { src: "/iconos/icono-512-maskable.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+    ],
   };
 }

@@ -148,21 +148,29 @@ export async function leerGraficoDeBarras(
     return { texto: c.texto.trim(), x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) };
   });
 
-  const rotulos: Rotulo[] = [];
-  for (const m of medidas) {
-    const t = m.texto.toLowerCase().replace(/[^a-z]/g, "");
-    const cy = (m.y0 + m.y1) / 2;
-    if (/^(ene|feb|mar|abr|may|jun|jul|ago|sep|sept|oct|nov|dic|actual|act|prom)$/.test(t)) {
-      rotulos.push({ texto: t, cx: (m.x0 + m.x1) / 2, y0: m.y0, cy });
-    } else if (/^act(ual)?prom(edio)?$/.test(t)) {
-      // "ACTPROM": dos rótulos pegados por el lector.
-      const w = m.x1 - m.x0;
-      rotulos.push({ texto: "act", cx: m.x0 + w / 4, y0: m.y0, cy }, { texto: "prom", cx: m.x0 + (3 * w) / 4, y0: m.y0, cy });
-    }
-  }
+  // El lector a veces junta varios rótulos en una caja ("MAR ABR MAY … ACTPROM")
+  // o varios números ("256 280"): se separan y se estima el centro de cada uno
+  // por su posición dentro del texto.
+  type Ficha = { texto: string; cx: number; y0: number; y1: number };
+  const fichas = (patron: RegExp, soloCajasDe?: RegExp): Ficha[] =>
+    medidas
+      // Para los rótulos: solo cajas hechas ÚNICAMENTE de meses ("MAR ABR…"), no
+      // palabras que los contienen ("Marsella", "Activa", "Promedio…").
+      .filter((m) => !soloCajasDe || m.texto.replace(soloCajasDe, "").replace(/[\s.\-/|]/g, "") === "")
+      .flatMap((m) =>
+      Array.from(m.texto.matchAll(patron)).map((f) => {
+        const i = f.index ?? 0;
+        const centro = (i + f[0].length / 2) / Math.max(1, m.texto.length);
+        return { texto: f[0], cx: m.x0 + centro * (m.x1 - m.x0), y0: m.y0, y1: m.y1 };
+      })
+    );
+
+  const MESES_ROTULO = /actual|act|prom(?:edio)?|ene|feb|mar|abr|may|jun|jul|ago|sept?|oct|nov|dic/gi;
+  const rotulos: Rotulo[] = fichas(MESES_ROTULO, MESES_ROTULO)
+    .map((f) => ({ texto: f.texto.toLowerCase(), cx: f.cx, y0: f.y0, cy: (f.y0 + f.y1) / 2 }));
   const grupos = rotulos.map((r) => rotulos.filter((o) => Math.abs(o.cy - r.cy) < 12));
   const fila = (grupos.sort((a, b) => b.length - a.length)[0] ?? []).sort((a, b) => a.cx - b.cx);
-  const meses = fila.filter((r) => !/^(act|actual|prom)$/.test(r.texto));
+  const meses = fila.filter((r) => !/^(act|prom)/.test(r.texto));
   const act = fila.find((r) => /^(act|actual)$/.test(r.texto));
   if (meses.length < 3 || !act) return null;
   const pasos = fila.slice(1).map((r, i) => r.cx - fila[i].cx).sort((a, b) => a - b);
@@ -170,17 +178,20 @@ export async function leerGraficoDeBarras(
   if (!(paso > 10)) return null;
 
   const horizontales = medidas.filter((c) => c.x1 - c.x0 > (c.y1 - c.y0) * 1.2);
+  // Números sueltos escritos derechos (solo cajas horizontales y sin letras raras).
+  const numeros = fichas(/\b\d{2,4}\b/g).filter((f) =>
+    horizontales.some((h) => f.cx >= h.x0 && f.cx <= h.x1 && f.y0 === h.y0 && /^[\d\s.,kwhKWH]+$/.test(h.texto))
+  );
 
   const leerColumna = async (r: Rotulo): Promise<number | null> => {
     const sx = Math.max(0, Math.round(r.cx - paso * 0.3));
     const sw = Math.min(imagen.width - sx, Math.round(paso * 0.6));
     const techo = r.y0 - paso * 2.6;
     // 1. Número derecho encima del rótulo, dentro de la columna (el más cercano).
-    const derechos = horizontales
-      .filter((h) => (h.x0 + h.x1) / 2 > r.cx - paso * 0.45 && (h.x0 + h.x1) / 2 < r.cx + paso * 0.45 && h.y1 < r.y0 - 1 && h.y0 > techo)
-      .filter((h) => /^\d{2,4}(\s*k\s*wh?)?$/i.test(h.texto.replace(/\s+/g, " ")))
+    const derechos = numeros
+      .filter((h) => h.cx > r.cx - paso * 0.45 && h.cx < r.cx + paso * 0.45 && h.y1 < r.y0 - 1 && h.y0 > techo)
       .sort((a, b) => b.y1 - a.y1);
-    if (derechos.length) return Number(derechos[0].texto.match(/\d{2,4}/)![0]);
+    if (derechos.length) return Number(derechos[0].texto);
 
     // 2. Texto de lado: recortar la franja (sin textos horizontales de arriba), girar y leer.
     let sy = Math.max(0, Math.round(techo));
