@@ -226,8 +226,8 @@ export default function InvoiceScanner({ onUsar }: Props) {
                 <span>Periodo{d.periodoEstimado ? " (estimado)" : ""}</span>
                 <strong>{campo(d.periodo)}</strong>
               </div>
-              <div className={clase(d.diasFacturados !== null)}>
-                <span>Días facturados</span>
+              <div className={clase(d.diasFacturados !== null && !d.diasEstimados)}>
+                <span>Días facturados{d.diasEstimados ? " (supuesto)" : ""}</span>
                 <strong>{campo(d.diasFacturados)}</strong>
               </div>
               <div className={clase(d.lecturaAnterior !== null && d.lecturaActual !== null)}>

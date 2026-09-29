@@ -78,7 +78,7 @@ La calidad de la imagen pone un límite que ningún programa supera. En una capt
 | Estrato | Acepta confusiones típicas: `Estrato; 4`, `Cro172  4` |
 | Municipio | Corrige hasta 2 letras mal leídas: `Ctago` → Cartago |
 | Periodo | Si es ilegible, lo **estima** con la fecha de emisión y lo marca "(estimado)" con un aviso |
-| Días facturados | Si son ilegibles, **no se inventan**: la persona los escribe |
+| Días facturados | Si son ilegibles, se asumen **30 (supuesto)**, con aviso. Es neutro: normalizar a 30 días no cambia el consumo. La persona lo corrige si ve otro número |
 
 Consejo para la foto: de frente, con buena luz, que la factura llene la pantalla y sin zoom digital. Si la empresa envía el PDF, usar el PDF.
 

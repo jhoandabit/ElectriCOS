@@ -125,8 +125,11 @@ for (const [nombre, archivo] of [["1x", "eep-ocr-captura-1x.txt"], ["2x", "eep-o
     assert.equal(datos.periodo, "2026-09");
     assert.equal(datos.periodoEstimado, true);
     assert.ok(avisos.some((a) => a.campo === "periodo" && a.nivel === "revisar"));
-    // Días ilegibles: NO se inventan (el OCR leyó "Dim facturadas 21", que es falso).
-    assert.equal(datos.diasFacturados, null);
+    // Días ilegibles (el OCR leyó "Dim facturadas 21", que es falso): no se
+    // usa ese número; se asume 30, que no altera la normalización, y se avisa.
+    assert.equal(datos.diasFacturados, 30);
+    assert.equal(datos.diasEstimados, true);
+    assert.ok(avisos.some((a) => a.campo === "diasFacturados" && a.nivel === "revisar"));
   });
 }
 
@@ -144,4 +147,5 @@ test("el PDF sigue leyendo el periodo real, no el estimado", () => {
   assert.equal(datos.periodo, "2026-09");
   assert.equal(datos.periodoEstimado, undefined);
   assert.equal(datos.diasFacturados, 28);
+  assert.equal(datos.diasEstimados, undefined);
 });

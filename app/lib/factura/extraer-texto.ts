@@ -309,6 +309,13 @@ export function extraerDeTexto(textoOriginal: string): DatosFactura {
     datos.periodo = periodoDesdeEmision(t);
     if (datos.periodo) datos.periodoEstimado = true;
   }
+  // Días ilegibles: se asume un mes de 30 días. Es NEUTRO para los cálculos
+  // (normalizar a 30 días no cambia el consumo) y se marca como supuesto
+  // para que la persona lo corrija si la factura dice otro número.
+  if (datos.diasFacturados === null && datos.consumoKwh !== null) {
+    datos.diasFacturados = 30;
+    datos.diasEstimados = true;
+  }
   if (e.estrato && datos.estrato === null) datos.estrato = e.estrato;
   if (e.valorKwh) datos.valorKwh = e.valorKwh;
   if (e.totalPagar) datos.totalPagar = e.totalPagar;

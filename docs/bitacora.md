@@ -104,7 +104,7 @@
 | Cómo se diagnosticó | Se ejecutó PaddleOCR sobre la misma imagen y se leyó el texto que produjo ("Ver texto técnico reconocido" en la app) |
 | Hallazgos | El periodo "14/AGO/2026 - 10/SEP/2026" salió como `6MAG0行026-105EPG224`: la letra mide unos 5 píxeles y ninguna IA la puede leer. "Días facturados 28" salió como `Dim factur 21`. El estrato sí estaba, pero mal escrito: `Cro172  4` (en vez de `CT0172  4`) y `Estrato; 4` (punto y coma en vez de dos puntos) |
 | Hipótesis descartada | Ampliar la imagen antes de leerla: al doble y al triple el periodo siguió ilegible y el municipio empeoró ("Cmrtag", "Ctago") |
-| Solución | Aceptar las confusiones típicas del OCR (`;` por `:`, `Cro`/`CTo` por `CT0`, hasta 2 letras mal leídas en el municipio). Si el periodo es ilegible, deducirlo de la fecha de emisión (letra grande) y **marcarlo como estimado** con un aviso. Los días ilegibles **no se inventan**. Pruebas con el texto real del OCR en `tests/fixtures/eep-ocr-captura-*.txt` |
+| Solución | Aceptar las confusiones típicas del OCR (`;` por `:`, `Cro`/`CTo` por `CT0`, hasta 2 letras mal leídas en el municipio). Si el periodo es ilegible, deducirlo de la fecha de emisión (letra grande) y **marcarlo como estimado** con un aviso. Si los días son ilegibles no se usa el número falso (21): se asumen 30, marcados como "supuesto". Pruebas con el texto real del OCR en `tests/fixtures/eep-ocr-captura-*.txt` |
 | Aprendizaje | Una IA no puede leer lo que la imagen no contiene. Cuando un dato no se puede leer, es mejor decirlo (o estimarlo y avisar) que inventarlo. El PDF siempre es la mejor fuente |
 
 ---
@@ -119,4 +119,4 @@
 | 28/09 | Lector de fotos dentro del celular (PaddleOCR) en vez de IA en la nube | Gratis, privado, sin claves; probado con la factura de referencia |
 | 28/09 | No guardar fotos ni datos personales | Los usuarios son menores de edad; no se necesitan |
 | 28/09 | Funciones de seguridad en el esquema `privado` | El asesor de Supabase advirtió que se podían llamar desde la API |
-| 28/09 | Si el periodo no se lee, se estima con la fecha de emisión y se avisa; los días no se estiman | El mes casi siempre se puede deducir; un número de días inventado cambiaría la normalización a 30 días |
+| 28/09 | Si el periodo no se lee, se estima con la fecha de emisión; si los días no se leen, se asumen 30. Ambos se marcan y se avisa | El mes casi siempre se puede deducir. Asumir 30 días es neutro: normalizar a 30 días no cambia el consumo, mientras que un número mal leído (21) sí lo alteraría |

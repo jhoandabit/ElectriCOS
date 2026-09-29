@@ -138,6 +138,14 @@ export function validarYCompletar(entrada: DatosFactura): {
     });
   }
 
+  if (datos.diasEstimados) {
+    avisos.push({
+      nivel: "revisar",
+      campo: "diasFacturados",
+      mensaje: "Los días facturados no se pudieron leer; se asumen 30 (un mes). Si la factura dice otro número, corrígelo.",
+    });
+  }
+
   const faltan: string[] = [];
   if (!datos.municipio) faltan.push("municipio");
   if (!datos.estrato) faltan.push("estrato");

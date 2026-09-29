@@ -40,6 +40,8 @@ export type DatosFactura = {
   historico: PuntoHistorico[];
   /** true si el periodo no se leyó sino que se dedujo de la fecha de emisión */
   periodoEstimado?: boolean;
+  /** true si los días no se leyeron y se asumió un mes de 30 días */
+  diasEstimados?: boolean;
 };
 
 export type AvisoLectura = {
