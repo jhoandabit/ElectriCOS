@@ -13,6 +13,7 @@ type Props = {
 // Números como se escriben en Colombia: 1.234,5
 const num = (n: number, decimales = 1) => n.toLocaleString("es-CO", { maximumFractionDigits: decimales });
 const pesos = (n: number) => "$" + Math.round(n).toLocaleString("es-CO");
+const precio = (n: number) => "$" + n.toLocaleString("es-CO", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 /** Frase sobre el subsidio o la contribución según el estrato (Ley 142 de 1994). */
 function fraseEstrato(estrato: number, subsistencia: number) {
@@ -87,7 +88,7 @@ export default function ResultadoMes({ registro, hogar, registros, parametros }:
           <strong className="dato-valor">{pesos(costo)}</strong>
           {dias && <p className="dato-sub">unos {pesos(costo / dias)} por día</p>}
           <p className="cuenta">
-            Cada kWh costó {pesos(registro.valor_kwh!)}: {num(kwh)} × {pesos(registro.valor_kwh!)} = <b>{pesos(costo)}</b>
+            Cada kWh costó {precio(registro.valor_kwh!)}: {num(kwh)} × {precio(registro.valor_kwh!)} ≈ <b>{pesos(costo)}</b>
           </p>
           <p>Es solo la energía. El total de la factura también cobra otras cosas, como alumbrado público y aseo.</p>
         </article>
