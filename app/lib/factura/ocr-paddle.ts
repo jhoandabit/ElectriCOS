@@ -105,3 +105,73 @@ export function agruparEnRenglones(cajas: CajaTexto[]): string[] {
     .sort((a, b) => a[0].cy - b[0].cy)
     .map((r) => r.map((c) => c.texto).join("  "));
 }
+
+// ---------- Texto vertical (valores escritos de lado en gráficos de barras) ----------
+
+function girar90(origen: HTMLCanvasElement, horario: boolean) {
+  const c = document.createElement("canvas");
+  c.width = origen.height;
+  c.height = origen.width;
+  const ctx = c.getContext("2d");
+  if (!ctx) return origen;
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, c.width, c.height);
+  if (horario) {
+    ctx.translate(c.width, 0);
+    ctx.rotate(Math.PI / 2);
+  } else {
+    ctx.translate(0, c.height);
+    ctx.rotate(-Math.PI / 2);
+  }
+  ctx.drawImage(origen, 0, 0);
+  return c;
+}
+
+/**
+ * Algunas facturas (p. ej. Celsia) escriben los kWh DE LADO dentro de las
+ * barras del gráfico ("119 kWh" de abajo hacia arriba). El lector normal
+ * los ve como cajas altas y angostas y no los entiende. Aquí se recorta cada
+ * caja vertical, se gira 90° y se lee otra vez. Devuelve un renglón con los
+ * textos de izquierda a derecha ("119 kWh  112 kWh  …") o null.
+ */
+export async function leerTextoVertical(imagen: HTMLCanvasElement, cajas: CajaTexto[]): Promise<string | null> {
+  const verticales = cajas
+    .map((c) => {
+      const xs = c.poligono.map((p) => p[0]);
+      const ys = c.poligono.map((p) => p[1]);
+      return { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) };
+    })
+    // Altas y angostas, pero no los textos de margen que recorren toda la hoja.
+    .filter((c) => c.y1 - c.y0 >= 18 && c.y1 - c.y0 > (c.x1 - c.x0) * 1.8 && c.y1 - c.y0 < imagen.height * 0.2)
+    .sort((a, b) => a.x0 - b.x0);
+  if (verticales.length < 3 || verticales.length > 24) return null;
+
+  const textos: string[] = [];
+  for (const v of verticales) {
+    const m = 4; // margen
+    const sx = Math.max(0, Math.floor(v.x0 - m));
+    const sy = Math.max(0, Math.floor(v.y0 - m));
+    const sw = Math.min(imagen.width - sx, Math.ceil(v.x1 - v.x0 + 2 * m));
+    const sh = Math.min(imagen.height - sy, Math.ceil(v.y1 - v.y0 + 2 * m));
+    // Ampliar para que la letra (ahora el ancho del recorte) tenga ≥ 32 px de alto al girar.
+    const factor = Math.min(4, Math.max(1, 32 / Math.max(1, sw)));
+    const recorte = document.createElement("canvas");
+    recorte.width = Math.round(sw * factor);
+    recorte.height = Math.round(sh * factor);
+    const ctx = recorte.getContext("2d");
+    if (!ctx) continue;
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(imagen, sx, sy, sw, sh, 0, 0, recorte.width, recorte.height);
+
+    let mejor = "";
+    for (const horario of [true, false]) {
+      const leido = (await reconocer(girar90(recorte, horario))).map((c) => c.texto).join(" ");
+      if (/\d/.test(leido) && leido.length > mejor.length) mejor = leido;
+      if (/\d+\s*kwh/i.test(leido)) break;
+    }
+    // Solo interesan valores de consumo: "119 kWh" (o el número solo).
+    const valor = mejor.match(/(\d{1,4})\s*k?wh/i) ?? mejor.match(/^\s*(\d{1,4})\s*$/);
+    if (valor) textos.push(`${valor[1]} kWh`);
+  }
+  return textos.length >= 3 ? textos.join("  ") : null;
+}

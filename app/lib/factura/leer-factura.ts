@@ -9,7 +9,7 @@
 
 import { esPdf, leerPdf, prepararFoto } from "./archivos";
 import { extraerDeTexto } from "./extraer-texto";
-import { agruparEnRenglones, reconocer } from "./ocr-paddle";
+import { agruparEnRenglones, leerTextoVertical, reconocer } from "./ocr-paddle";
 import type { AvisoLectura, DatosFactura, FuenteLectura, ResultadoLectura } from "./tipos";
 import { validarYCompletar } from "./validar";
 
@@ -25,7 +25,18 @@ async function leerImagen(imagen: HTMLCanvasElement, alProgresar: AlProgresar): 
   const lectura = reconocer(imagen);
   alProgresar("Leyendo la factura en tu celular…");
   const cajas = await lectura;
-  return agruparEnRenglones(cajas).join("\n");
+  let texto = agruparEnRenglones(cajas).join("\n");
+
+  // Gráfico de "últimos consumos" con los kWh escritos de lado (Celsia):
+  // si hay un renglón de meses que termina en "Actual", se leen las cajas
+  // verticales y se agregan justo encima de una copia de ese renglón.
+  const meses = texto.split("\n").find((l) => /\bactual\b/i.test(l) && (l.match(/\b(ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic)\b/gi)?.length ?? 0) >= 3);
+  if (meses) {
+    alProgresar("Leyendo el gráfico de consumos…");
+    const vertical = await leerTextoVertical(imagen, cajas).catch(() => null);
+    if (vertical) texto += `\n${vertical}\n${meses}`;
+  }
+  return texto;
 }
 
 export async function leerFactura(archivo: File, alProgresar: AlProgresar): Promise<ResultadoLectura> {
