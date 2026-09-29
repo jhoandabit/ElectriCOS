@@ -249,33 +249,93 @@ huella (kg CO₂e) = consumo (kWh) × 0,220
 
 378,2 − 173 = **205,2 kWh por encima** de la subsistencia de Cartago.
 
-## 4.4 La línea base: el consumo "normal" del hogar
+## 4.4 La línea base: el consumo "normal" de la casa
 
-Es el **promedio de los últimos meses** (mínimo 3, máximo 6), cada mes llevado a 30 días. Con el histórico que trae la misma factura:
+**¿Para qué sirve?** Para saber si la familia ahorró, primero hay que saber cuánto gasta **normalmente**. Un solo mes no sirve: puede haber sido un mes con visitas o de vacaciones. Por eso se miran varios meses (mínimo 3, máximo los últimos 6) y se resumen en unos pocos números.
 
-| Mes | kWh | Días | kWh en 30 días |
+**Paso 1. Poner todos los meses en la misma medida (30 días).** Cada mes dura distinto, así que primero se lleva cada uno a 30 días (capítulo 4.1):
+
+| Mes | kWh de la factura | Días | Cuenta | kWh en 30 días |
+|---|---|---|---|---|
+| Marzo | 207 | 31 | 207 ÷ 31 × 30 | 200,3 |
+| Abril | 178 | 30 | 178 ÷ 30 × 30 | 178,0 |
+| Mayo | 256 | 31 | 256 ÷ 31 × 30 | 247,7 |
+| Junio | 280 | 30 | 280 ÷ 30 × 30 | 280,0 |
+| Julio | 268 | 31 | 268 ÷ 31 × 30 | 259,4 |
+| Agosto | 415 | 33 | 415 ÷ 33 × 30 | 377,3 |
+
+**Paso 2. El promedio = la línea base.** Se suman los 6 meses y se divide entre 6:
+
+::: {.formula}
+(200,3 + 178,0 + 247,7 + 280,0 + 259,4 + 377,3) ÷ 6 = 1.542,7 ÷ 6 = 257,1 kWh
+:::
+
+Quiere decir: **"en un mes normal, esta casa usa unos 257 kWh"**. Es como el promedio de notas de un periodo: ninguna nota sola dice cómo le fue al estudiante, pero el promedio sí.
+
+**Paso 3. El mínimo y el máximo.** El mes que menos gastó (abril: 178,0) y el que más (agosto: 377,3). Dicen entre qué valores se mueve la casa.
+
+**Paso 4. La desviación estándar: ¿los meses son parecidos o muy distintos?** Mide qué tanto se alejan los meses del promedio, "en promedio". Se calcula así:
+
+| Mes | kWh | Diferencia con 257,1 | Diferencia al cuadrado |
 |---|---|---|---|
-| Marzo | 207 | 31 | 200,3 |
-| Abril | 178 | 30 | 178,0 |
-| Mayo | 256 | 31 | 247,7 |
-| Junio | 280 | 30 | 280,0 |
-| Julio | 268 | 31 | 259,4 |
-| Agosto | 415 | 33 | 377,3 |
+| Marzo | 200,3 | −56,8 | 3.226,2 |
+| Abril | 178,0 | −79,1 | 6.256,8 |
+| Mayo | 247,7 | −9,4 | 88,4 |
+| Junio | 280,0 | +22,9 | 524,4 |
+| Julio | 259,4 | +2,3 | 5,3 |
+| Agosto | 377,3 | +120,2 | 14.448,0 |
+| **Suma** | | | **24.549,1** |
 
-- **Promedio (línea base)**: (200,3 + 178,0 + 247,7 + 280,0 + 259,4 + 377,3) ÷ 6 = **257,1 kWh**.
-- **Mínimo y máximo**: 178,0 y 377,3 kWh.
-- **Desviación estándar**: 70,1 kWh. Mide qué tanto se alejan los meses del promedio. **Variación**: 70,1 ÷ 257,1 = 27,3 %.
-- **Tendencia**: +33,2 kWh por mes. Es la pendiente de la recta que mejor se ajusta a los puntos (mínimos cuadrados). Si es positiva, el consumo viene subiendo.
+1. Se resta el promedio a cada mes (unos quedan por debajo, con signo −, y otros por encima, con +).
+2. Se eleva cada diferencia al cuadrado. Así los negativos no cancelan a los positivos, y las diferencias grandes pesan más.
+3. Se suman: 24.549,1.
+4. Se divide entre (número de meses − 1) = 5: 24.549,1 ÷ 5 = 4.909,8.
+5. Se saca la raíz cuadrada: √4.909,8 = **70,1 kWh**.
 
-¿Por qué mínimo 3 meses? Con 1 o 2, un mes raro (vacaciones, visitas) mueve demasiado el promedio.
+Quiere decir: **"un mes típico se aleja unos 70 kWh del promedio"**, hacia arriba o hacia abajo.
+
+**Paso 5. La variación: ¿70 kWh es mucho?** Depende del tamaño del consumo. Por eso se compara con el promedio: 70,1 ÷ 257,1 = 0,273 = **27,3 %**. Una guía sencilla:
+
+| Variación | Qué significa |
+|---|---|
+| Menos de 10 % | Consumo muy estable: todos los meses se parecen |
+| 10 % a 25 % | Cambia algo de un mes a otro |
+| Más de 25 % | Cambia bastante: hay meses muy distintos (aquí, agosto) |
+
+**Paso 6. La tendencia: ¿el consumo viene subiendo o bajando?** Imaginen los 6 meses como puntos en una gráfica y una regla puesta de forma que pase lo más cerca posible de todos los puntos. La inclinación de esa regla es la tendencia. Aquí es **+33,2 kWh por mes**: en estos 6 meses, el consumo subió en promedio unos 33 kWh cada mes. Si fuera negativa, el consumo vendría bajando.
+
+Una forma fácil de comprobarlo sin fórmulas: el promedio de los primeros 3 meses (marzo a mayo) es 208,7 kWh y el de los últimos 3 (junio a agosto) es 305,6 kWh. La segunda mitad es claramente más alta: el consumo viene subiendo.
+
+(Para quien quiera la fórmula: se numeran los meses 1 a 6; la pendiente de mínimos cuadrados es Σ(x − 3,5)(y − 257,1) ÷ Σ(x − 3,5)² = 580,7 ÷ 17,5 = 33,2.)
+
+**¿Por qué mínimo 3 meses?** Con 1 o 2, un solo mes raro cambia todo el promedio.
 
 ## 4.5 La meta
+
+**¿Qué es?** El consumo al que la familia se compromete a bajar. Se parte de la línea base y se le quita un porcentaje:
 
 ::: {.formula}
 meta = línea base × (1 − porcentaje ÷ 100)
 :::
 
-Con una reducción del 10 %: 257,1 × 0,9 = **231,4 kWh** al mes (en 30 días).
+**Así se lee, paso a paso, con 10 %:**
+
+1. 10 ÷ 100 = 0,10 (el 10 % escrito como decimal).
+2. 1 − 0,10 = 0,90 (si se quita el 10 %, queda el 90 %).
+3. 257,1 × 0,90 = **231,4 kWh**.
+
+Es lo mismo que calcular cuánto se quita y restarlo: el 10 % de 257,1 es 25,7; y 257,1 − 25,7 = 231,4. Es igual que un descuento en una tienda: una camisa de $50.000 con 10 % de descuento queda en $45.000.
+
+| Si eligen reducir | Hay que bajar | La meta queda en |
+|---|---|---|
+| 3 % | 7,7 kWh | 249,4 kWh al mes |
+| 5 % | 12,9 kWh | 244,3 kWh al mes |
+| 10 % | 25,7 kWh | 231,4 kWh al mes |
+| 15 % | 38,6 kWh | 218,5 kWh al mes |
+
+¿Cuánto es 25,7 kWh al mes? Por ejemplo, bajar 5 minutos diarios de ducha eléctrica (3.500 W) ahorra unos 0,29 kWh al día, cerca de 9 kWh al mes. Con eso y otras dos acciones parecidas se llega a la meta del 10 %.
+
+La meta empieza a contar el mes siguiente al último mes de la línea base.
 
 ## 4.6 El avance
 
