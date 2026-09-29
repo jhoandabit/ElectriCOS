@@ -129,49 +129,57 @@ function girar90(origen: HTMLCanvasElement, horario: boolean) {
 
 /**
  * Algunas facturas (p. ej. Celsia) escriben los kWh DE LADO dentro de las
- * barras del gráfico ("119 kWh" de abajo hacia arriba). El lector normal
- * los ve como cajas altas y angostas y no los entiende. Aquí se recorta cada
- * caja vertical, se gira 90° y se lee otra vez. Devuelve un renglón con los
- * textos de izquierda a derecha ("119 kWh  112 kWh  …") o null.
+ * barras del gráfico ("119 kWh" de abajo hacia arriba). El lector normal no
+ * los entiende. Aquí se usan los rótulos de los meses (SEP NOV … Actual) para
+ * ubicar cada columna, se recorta la franja que queda encima de cada rótulo,
+ * se gira 90° y se lee. Devuelve un renglón "119 kWh  112 kWh  …" en el orden
+ * de los meses, o null si no se pudo leer TODAS las columnas.
  */
 export async function leerTextoVertical(imagen: HTMLCanvasElement, cajas: CajaTexto[]): Promise<string | null> {
-  const verticales = cajas
+  const rotulos = cajas
+    .filter((c) => /^(ene|feb|mar|abr|may|jun|jul|ago|sep|sept|oct|nov|dic|actual)\.?$/i.test(c.texto.trim()))
     .map((c) => {
       const xs = c.poligono.map((p) => p[0]);
       const ys = c.poligono.map((p) => p[1]);
-      return { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) };
-    })
-    // Altas y angostas, pero no los textos de margen que recorren toda la hoja.
-    .filter((c) => c.y1 - c.y0 >= 18 && c.y1 - c.y0 > (c.x1 - c.x0) * 1.8 && c.y1 - c.y0 < imagen.height * 0.2)
-    .sort((a, b) => a.x0 - b.x0);
-  if (verticales.length < 3 || verticales.length > 24) return null;
+      return { cx: (Math.min(...xs) + Math.max(...xs)) / 2, y0: Math.min(...ys), cy: (Math.min(...ys) + Math.max(...ys)) / 2 };
+    });
+  if (rotulos.length < 4) return null;
+  // Los rótulos del gráfico están en un mismo renglón: se toma el grupo más grande.
+  const grupos = rotulos.map((r) => rotulos.filter((o) => Math.abs(o.cy - r.cy) < 12));
+  const fila = grupos.sort((a, b) => b.length - a.length)[0].sort((a, b) => a.cx - b.cx);
+  if (fila.length < 4) return null;
+  const pasos = fila.slice(1).map((r, i) => r.cx - fila[i].cx).sort((a, b) => a - b);
+  const paso = pasos[Math.floor(pasos.length / 2)];
+  if (!(paso > 10)) return null;
 
   const textos: string[] = [];
-  for (const v of verticales) {
-    const m = 4; // margen
-    const sx = Math.max(0, Math.floor(v.x0 - m));
-    const sy = Math.max(0, Math.floor(v.y0 - m));
-    const sw = Math.min(imagen.width - sx, Math.ceil(v.x1 - v.x0 + 2 * m));
-    const sh = Math.min(imagen.height - sy, Math.ceil(v.y1 - v.y0 + 2 * m));
-    // Ampliar para que la letra (ahora el ancho del recorte) tenga ≥ 32 px de alto al girar.
-    const factor = Math.min(4, Math.max(1, 32 / Math.max(1, sw)));
+  for (const r of fila) {
+    const sx = Math.max(0, Math.round(r.cx - paso * 0.45));
+    const sw = Math.min(imagen.width - sx, Math.round(paso * 0.9));
+    const alto = Math.round(paso * 2.4); // la zona de las barras, encima del rótulo
+    const sy = Math.max(0, Math.round(r.y0 - alto));
+    const sh = Math.round(r.y0 - 2 - sy);
+    if (sw < 8 || sh < 8) return null;
+    const factor = Math.min(3, Math.max(1, 48 / sw));
     const recorte = document.createElement("canvas");
     recorte.width = Math.round(sw * factor);
     recorte.height = Math.round(sh * factor);
     const ctx = recorte.getContext("2d");
-    if (!ctx) continue;
+    if (!ctx) return null;
     ctx.imageSmoothingQuality = "high";
     ctx.drawImage(imagen, sx, sy, sw, sh, 0, 0, recorte.width, recorte.height);
 
-    let mejor = "";
-    for (const horario of [true, false]) {
+    let valor: string | null = null;
+    for (const horario of [false, true]) {
       const leido = (await reconocer(girar90(recorte, horario))).map((c) => c.texto).join(" ");
-      if (/\d/.test(leido) && leido.length > mejor.length) mejor = leido;
-      if (/\d+\s*kwh/i.test(leido)) break;
+      const m = leido.match(/(\d{1,4})\s*k?w\s*h/i) ?? leido.match(/\b(\d{2,4})\b/);
+      if (m) {
+        valor = m[1];
+        break;
+      }
     }
-    // Solo interesan valores de consumo: "119 kWh" (o el número solo).
-    const valor = mejor.match(/(\d{1,4})\s*k?wh/i) ?? mejor.match(/^\s*(\d{1,4})\s*$/);
-    if (valor) textos.push(`${valor[1]} kWh`);
+    if (valor === null) return null; // si falta una columna, los meses quedarían corridos
+    textos.push(`${valor} kWh`);
   }
-  return textos.length >= 3 ? textos.join("  ") : null;
+  return textos.join("  ");
 }
