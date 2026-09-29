@@ -127,30 +127,57 @@ function girar90(origen: HTMLCanvasElement, horario: boolean) {
   return c;
 }
 
-/** Texto oscuro → negro; fondo (blanco o color de la barra) → blanco. */
-function blancoYNegro(origen: HTMLCanvasElement) {
+function lienzo(ancho: number, alto: number) {
   const c = document.createElement("canvas");
-  c.width = origen.width;
-  c.height = origen.height;
+  c.width = ancho;
+  c.height = alto;
   const ctx = c.getContext("2d");
+  if (ctx) {
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, ancho, alto);
+    ctx.imageSmoothingQuality = "high";
+  }
+  return { c, ctx };
+}
+
+/** Borde blanco alrededor, para que el texto no quede pegado al borde. */
+function conMargen(origen: HTMLCanvasElement, m: number) {
+  const { c, ctx } = lienzo(origen.width + 2 * m, origen.height + 2 * m);
+  ctx?.drawImage(origen, m, m);
+  return c;
+}
+
+function ampliar(origen: HTMLCanvasElement, f: number) {
+  const { c, ctx } = lienzo(Math.round(origen.width * f), Math.round(origen.height * f));
+  ctx?.drawImage(origen, 0, 0, c.width, c.height);
+  return c;
+}
+
+/**
+ * Gris con más contraste: el texto oscuro queda casi negro y el color de la
+ * barra (naranja, azul…) se aclara, sin perder los bordes suaves de las letras.
+ */
+function contrastar(origen: HTMLCanvasElement) {
+  const { c, ctx } = lienzo(origen.width, origen.height);
   if (!ctx) return origen;
   ctx.drawImage(origen, 0, 0);
   const img = ctx.getImageData(0, 0, c.width, c.height);
   const p = img.data;
   for (let i = 0; i < p.length; i += 4) {
-    const v = 0.299 * p[i] + 0.587 * p[i + 1] + 0.114 * p[i + 2] < 125 ? 0 : 255;
-    p[i] = p[i + 1] = p[i + 2] = v;
+    const gris = 0.299 * p[i] + 0.587 * p[i + 1] + 0.114 * p[i + 2];
+    p[i] = p[i + 1] = p[i + 2] = Math.max(0, Math.min(255, (gris - 60) * 1.8));
   }
   ctx.putImageData(img, 0, 0);
   return c;
 }
 
 /**
- * Entre lecturas distintas de la misma barra, la que tiene más dígitos:
- * el error típico es perder uno ("121" → "12"), no inventarlo.
+ * Entre lecturas distintas de la misma barra: la que más se repite y, si
+ * empatan, la de más dígitos (el error típico es perder uno: "121" → "12").
  */
 export function elegirLectura(valores: number[]): number {
-  return [...valores].sort((a, b) => String(b).length - String(a).length)[0];
+  const veces = (v: number) => valores.filter((x) => x === v).length;
+  return [...valores].sort((a, b) => veces(b) - veces(a) || String(b).length - String(a).length)[0];
 }
 
 type Rotulo = { texto: string; cx: number; y0: number; cy: number };
@@ -236,28 +263,39 @@ export async function leerGraficoDeBarras(
     ctx.imageSmoothingQuality = "high";
     ctx.drawImage(imagen, sx, sy, sw, sh, 0, 0, recorte.width, recorte.height);
 
-    // Varios intentos (imagen tal cual y en blanco y negro, girada a un lado
-    // y al otro). Se vota: cuando dos intentos coinciden, ese es el valor.
-    // Así "121 kWh" no queda como "12" por un intento que cortó un dígito.
-    const bn = blancoYNegro(recorte);
+    // Varios intentos: la franja tal cual, con más contraste y más ampliada.
+    // El texto de Celsia se lee de abajo hacia arriba (giro horario); el giro
+    // contrario queda de respaldo para otras facturas. Se agrega un margen
+    // blanco: sin él, el primer dígito (pegado al borde) se pierde ("121" → "12").
+    // Si dos intentos coinciden, ese es el valor.
     const intentos: [HTMLCanvasElement, boolean][] = [
       [recorte, true],
-      [bn, true],
-      [recorte, false],
-      [bn, false],
+      [contrastar(recorte), true],
+      [ampliar(recorte, 1.5), true],
     ];
     const conKwh: number[] = [];
     let suelto: number | null = null;
-    for (const [lienzo, horario] of intentos) {
-      const leido = (await reconocer(girar90(lienzo, horario))).map((c) => c.texto).join(" ");
+    const probar = async (lienzo: HTMLCanvasElement, horario: boolean) => {
+      const leido = (await reconocer(conMargen(girar90(lienzo, horario), 16))).map((c) => c.texto).join(" ");
       const m = leido.match(/(\d{1,4})\s*k\s*w/i);
       if (m) {
         const v = Number(m[1]);
-        if (conKwh.includes(v)) return v;
+        const repetido = conKwh.includes(v);
         conKwh.push(v);
-      } else if (suelto === null) {
-        const n = leido.match(/\b(\d{2,4})\b/);
-        if (n) suelto = Number(n[1]);
+        return repetido ? v : null;
+      }
+      const n = leido.match(/\b(\d{2,4})\b/);
+      if (n && suelto === null) suelto = Number(n[1]);
+      return null;
+    };
+    for (const [lienzo, horario] of intentos) {
+      const v = await probar(lienzo, horario);
+      if (v !== null) return v;
+    }
+    if (!conKwh.length) {
+      for (const lienzo of [recorte, contrastar(recorte)]) {
+        const v = await probar(lienzo, false);
+        if (v !== null) return v;
       }
     }
     if (conKwh.length) return elegirLectura(conKwh);

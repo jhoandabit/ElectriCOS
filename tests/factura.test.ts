@@ -4,7 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { datosDeRecorte, extraerDeTexto, municipioConocido } from "../app/lib/factura/extraer-texto";
-import { agruparEnRenglones } from "../app/lib/factura/ocr-paddle";
+import { agruparEnRenglones, elegirLectura } from "../app/lib/factura/ocr-paddle";
 import { lecturasDesdeLineas } from "../app/lib/factura/estructura";
 import { parseNumeroCO } from "../app/lib/factura/texto";
 import { consumoPorLecturas, validarYCompletar } from "../app/lib/factura/validar";
@@ -243,4 +243,19 @@ test("foto de Celsia: año mal leído (2028) y 'Clasificación' no son el period
   assert.equal(datos.periodoEstimado, true);
   assert.ok(avisos.some((a) => a.campo === "periodo"));
   assert.equal(datos.historico[datos.historico.length - 1].periodo, "2026-07"); // también se corrige
+});
+
+test("gráfico de fotos: entre lecturas distintas de una barra gana la de más dígitos", () => {
+  assert.equal(elegirLectura([12, 121]), 121);
+  assert.equal(elegirLectura([153]), 153);
+});
+
+test("barras ilegibles (0 kWh) se quitan antes de compararlas con el consumo", () => {
+  const base = extraerDeTexto("Consumo mes: 314 kWh\nDías facturados: 61\nPeriodo facturado: 14/JUL/2026 - 12/SEP/2026");
+  const meses = ["2025-09", "2025-11", "2026-01", "2026-03", "2026-05", "2026-07"];
+  const kwh = [0, 0, 0, 153, 0, 544];
+  const { datos, avisos } = validarYCompletar({ ...base, historico: meses.map((periodo, i) => ({ periodo, kwh: kwh[i], dias: 61 })) });
+  assert.deepEqual(datos.historico.map((p) => p.kwh), [153, 544]);
+  assert.ok(avisos.some((a) => a.campo === "historico" && /No se pudo leer 4 meses/.test(a.mensaje)));
+  assert.ok(!avisos.some((a) => /muy distinto del promedio/.test(a.mensaje)), "los ceros no bajan el promedio");
 });
