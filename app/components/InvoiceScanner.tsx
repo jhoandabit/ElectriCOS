@@ -96,26 +96,34 @@ export default function InvoiceScanner({ onUsar }: Props) {
     try {
       const r = await leerRecuadro(archivo, recuadro, setEstado);
       setGuiado(r);
-      if (!r.fila) {
-        setError("No se encontraron las lecturas en ese recuadro. Encierra solo la fila del medidor (Activa) o escribe los números mirando la imagen ampliada.");
+      const nuevos = r.datos;
+      if (!Object.keys(nuevos).length) {
+        setError(
+          "No encontramos datos en esa parte. Encierra una sola línea: la fila del medidor (Activa) o la del periodo y los días. Si tampoco funciona, escribe los datos mirando la imagen ampliada."
+        );
         return;
       }
+      // Lo leído en el recorte reemplaza lo que faltaba o era estimado.
       const datos: DatosFactura = {
         ...lectura.datos,
-        lecturaAnterior: r.fila.lecturaAnterior,
-        lecturaActual: r.fila.lecturaActual,
-        consumoKwh: r.fila.consumoKwh,
-        factorMultiplicador: r.fila.factorMultiplicador ?? lectura.datos.factorMultiplicador,
-        promedioKwh: r.fila.promedioKwh ?? lectura.datos.promedioKwh,
+        ...nuevos,
+        periodoEstimado: nuevos.periodo ? false : lectura.datos.periodoEstimado,
+        diasEstimados: nuevos.diasFacturados ? false : lectura.datos.diasEstimados,
       };
+      const encontrados = [
+        nuevos.consumoKwh !== undefined && "lecturas y consumo",
+        nuevos.periodo && "periodo",
+        nuevos.diasFacturados && "días facturados",
+        nuevos.estrato && "estrato",
+      ].filter(Boolean);
       const v = validarYCompletar(datos);
       setLectura({
         ...lectura,
         datos: v.datos,
         confianzaConsumo: v.confianzaConsumo,
-        avisos: [{ nivel: "ok", campo: "consumoKwh", mensaje: "Lecturas tomadas de la fila que encerraste." }, ...v.avisos],
+        avisos: [{ nivel: "ok", campo: "general", mensaje: `Tomado de la parte que encerraste: ${encontrados.join(", ")}.` }, ...v.avisos],
       });
-      setMetodo("guiada");
+      if (nuevos.consumoKwh !== undefined) setMetodo("guiada");
       setGuiaAbierta(false);
     } catch (e) {
       setError((e as Error).message || "No fue posible leer el recuadro.");
@@ -190,18 +198,21 @@ export default function InvoiceScanner({ onUsar }: Props) {
         {vistaPrevia && guiaAbierta && (
           <section className="guia-card" aria-label="Lectura guiada" ref={refGuia}>
             <span className="section-kicker">LECTURA GUIADA</span>
-            <h3>{lectura && lectura.confianzaConsumo < 55 ? "No pudimos leer el consumo. Ayúdanos:" : "Encierra la fila del medidor"}</h3>
+            <h3>{lectura && lectura.confianzaConsumo < 55 ? "No pudimos leer el consumo. Ayúdanos:" : "Encierra la parte que falta"}</h3>
             <p>
-              Arrastra el dedo sobre la foto para encerrar la fila <b>Activa</b>: la que tiene el número del medidor, la lectura
-              actual, la anterior y el consumo. Deja un poco de margen.
+              Arrastra el dedo sobre la foto para encerrar <b>una sola línea</b>, con un poco de margen:
             </p>
+            <ul className="guia-opciones">
+              <li>la fila <b>Activa</b> (número del medidor, lecturas y consumo), o</li>
+              <li>la línea <b>Periodo facturado</b> y <b>Días facturados</b>.</li>
+            </ul>
             <SelectorRecuadro src={vistaPrevia} valor={recuadro} onCambio={setRecuadro} />
             <div className="button-row">
               <button className="secondary-button" type="button" onClick={() => setGuiaAbierta(false)} disabled={leyendo}>
                 Cancelar
               </button>
               <button className="primary-button" type="button" onClick={leerFilaMedidor} disabled={!recuadro || leyendo}>
-                Leer esta fila
+                Leer esta parte
               </button>
             </div>
           </section>
@@ -272,15 +283,15 @@ export default function InvoiceScanner({ onUsar }: Props) {
 
         {vistaPrevia && lectura && !leyendo && !guiaAbierta && (
           <button className="secondary-button full-button" type="button" onClick={() => setGuiaAbierta(true)}>
-            {lectura.confianzaConsumo >= 80 ? "Corregir leyendo la fila del medidor" : "Leer la fila del medidor"}
+            {lectura.confianzaConsumo >= 80 ? "Leer una parte de la factura (periodo, días o medidor)" : "Leer la fila del medidor"}
           </button>
         )}
 
         {guiado && (
           <div className="guia-recorte">
-            <span className="metric-label">FILA LEÍDA (AMPLIADA)</span>
-            <img src={guiado.recorteUrl} alt="Recorte ampliado de la fila del medidor" />
-            {!guiado.fila && <small>Si no se lee bien, escribe las lecturas en el formulario mirando esta imagen.</small>}
+            <span className="metric-label">PARTE LEÍDA (AMPLIADA)</span>
+            <img src={guiado.recorteUrl} alt="Recorte ampliado de la parte que encerraste" />
+            {!Object.keys(guiado.datos).length && <small>Si no se lee bien, escribe los datos en el formulario mirando esta imagen.</small>}
           </div>
         )}
 

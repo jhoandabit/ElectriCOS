@@ -1,17 +1,18 @@
 "use client";
 
-// Lectura guiada: la persona encierra con el dedo la fila del medidor y
-// leemos SOLO ese recuadro con PaddleOCR. Sin internet ni cuentas, y la foto
+// Lectura guiada: la persona encierra con el dedo UNA parte de la factura
+// (la fila del medidor, la línea del periodo, los días…) y leemos SOLO ese
+// recuadro con PaddleOCR. Sin internet ni cuentas, y la foto
 // no sale del celular.
 //
 // Pasos:
 //   1. Recortar a resolución completa y ampliar a ~1600 px de ancho.
 //   2. Leer el recorte con PaddleOCR y armar los renglones.
-//   3. Si no aparece "lectura, lectura, diferencia", enderezar el recorte
+//   3. Si no aparece ningún dato, enderezar el recorte
 //      (el ángulo que deja los renglones más "nítidos") y leer otra vez.
 
 import { cargarImagen, dimensiones } from "./archivos";
-import { lecturasDesdeLineas, type FilaLecturas } from "./estructura";
+import { datosDeRecorte, type DatosRecorte } from "./extraer-texto";
 import { agruparEnRenglones, reconocer } from "./ocr-paddle";
 
 export type Recuadro = { x: number; y: number; ancho: number; alto: number }; // 0 a 1
@@ -93,7 +94,8 @@ function anguloParaEnderezar(canvas: HTMLCanvasElement, umbral: number) {
 }
 
 export type ResultadoGuiado = {
-  fila: FilaLecturas | null;
+  /** Solo lo que se leyó en el recorte (vacío si no se encontró nada). */
+  datos: DatosRecorte;
   lineas: string[];
   /** Recorte ampliado (a color) para que la persona compare. */
   recorteUrl: string;
@@ -104,7 +106,7 @@ export async function leerRecuadro(
   recuadro: Recuadro,
   alProgresar: (mensaje: string) => void
 ): Promise<ResultadoGuiado> {
-  alProgresar("Recortando la fila…");
+  alProgresar("Recortando la parte que encerraste…");
   const imagen = await cargarImagen(archivo);
   const { ancho, alto } = dimensiones(imagen);
   const sx = Math.round(recuadro.x * ancho);
@@ -124,18 +126,21 @@ export async function leerRecuadro(
   ctx.drawImage(imagen, sx, sy, sw, sh, 0, 0, recorte.width, recorte.height);
   const recorteUrl = recorte.toDataURL("image/jpeg", 0.85);
 
-  alProgresar("Leyendo la fila…");
+  alProgresar("Leyendo esa parte…");
   let lineas = agruparEnRenglones(await reconocer(recorte));
-  let fila = lecturasDesdeLineas(lineas);
+  let datos = datosDeRecorte(lineas);
 
-  if (!fila) {
+  if (!Object.keys(datos).length) {
     alProgresar("Enderezando y leyendo otra vez…");
     const umbral = umbralOtsu(aGris(recorte));
     const derecho = rotar(recorte, anguloParaEnderezar(recorte, umbral));
     const segunda = agruparEnRenglones(await reconocer(derecho));
-    fila = lecturasDesdeLineas(segunda);
-    if (fila) lineas = segunda;
+    const otra = datosDeRecorte(segunda);
+    if (Object.keys(otra).length) {
+      lineas = segunda;
+      datos = otra;
+    }
   }
 
-  return { fila, lineas, recorteUrl };
+  return { datos, lineas, recorteUrl };
 }

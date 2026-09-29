@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { extraerDeTexto, municipioConocido } from "../app/lib/factura/extraer-texto";
+import { datosDeRecorte, extraerDeTexto, municipioConocido } from "../app/lib/factura/extraer-texto";
 import { agruparEnRenglones } from "../app/lib/factura/ocr-paddle";
 import { lecturasDesdeLineas } from "../app/lib/factura/estructura";
 import { parseNumeroCO } from "../app/lib/factura/texto";
@@ -170,4 +170,26 @@ test("histórico mal leído por OCR (\"AGO-2026 24\") se descarta con aviso", ()
   const { datos, avisos } = validarYCompletar(crudo);
   assert.equal(datos.historico.length, 0); // …pero no llega a guardarse
   assert.ok(avisos.some((a) => a.campo === "historico"));
+});
+
+test("lectura guiada: la línea del periodo y los días, aunque el OCR los lea mal", () => {
+  // Así puede quedar esa línea en una foto borrosa: sin barra, con 0 en vez de O.
+  for (const linea of [
+    "Periodo facturado:  14/AGO/2026 - 10/SEP/2026  Días facturados:  28",
+    "Periodo facturado:  14AGO/2026 - 10/SEP/2026  Dias facturados  28",
+    "Periodo facturado:  14/AG0/2026 - 10/5EP/2026  28",
+  ]) {
+    const r = datosDeRecorte([linea]);
+    assert.equal(r.periodo, "2026-09", linea);
+    assert.equal(r.diasFacturados, 28, linea);
+    assert.equal(r.lecturaAnterior, undefined);
+  }
+});
+
+test("lectura guiada: la fila del medidor", () => {
+  const r = datosDeRecorte(["Activa  1408001303  GNS  19840  19487  353  1  353  267"]);
+  assert.equal(r.consumoKwh, 353);
+  assert.equal(r.lecturaAnterior, 19487);
+  assert.equal(r.periodo, undefined); // nada estimado en un recorte
+  assert.equal(r.diasFacturados, undefined);
 });

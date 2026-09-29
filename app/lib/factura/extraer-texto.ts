@@ -4,7 +4,7 @@
 // disponible y la segunda opinión cuando sí lo está.
 
 import { detectarEmpresa } from "./empresas";
-import { extraerPorEstructura } from "./estructura";
+import { extraerPorEstructura, lecturasDesdeLineas } from "./estructura";
 import {
   diasEntre,
   fechasEnTexto,
@@ -322,4 +322,30 @@ export function extraerDeTexto(textoOriginal: string): DatosFactura {
   if (e.historico && e.historico.length >= datos.historico.length) datos.historico = e.historico;
 
   return datos;
+}
+
+export type DatosRecorte = Partial<
+  Pick<DatosFactura, "lecturaAnterior" | "lecturaActual" | "consumoKwh" | "factorMultiplicador" | "promedioKwh" | "periodo" | "diasFacturados" | "estrato">
+>;
+
+/**
+ * Lectura guiada: la persona encierra UNA parte de la factura (la fila del
+ * medidor, la línea del periodo, los días…). Devuelve solo lo que se LEYÓ en
+ * ese recorte; nada estimado ni supuesto.
+ */
+export function datosDeRecorte(lineas: string[]): DatosRecorte {
+  const r: DatosRecorte = {};
+  const fila = lecturasDesdeLineas(lineas);
+  if (fila) {
+    r.lecturaAnterior = fila.lecturaAnterior;
+    r.lecturaActual = fila.lecturaActual;
+    r.consumoKwh = fila.consumoKwh;
+    if (fila.factorMultiplicador !== null) r.factorMultiplicador = fila.factorMultiplicador;
+    if (fila.promedioKwh !== null) r.promedioKwh = fila.promedioKwh;
+  }
+  const d = extraerDeTexto(lineas.join("\n"));
+  if (d.periodo && !d.periodoEstimado) r.periodo = d.periodo;
+  if (d.diasFacturados && !d.diasEstimados) r.diasFacturados = d.diasFacturados;
+  if (d.estrato) r.estrato = d.estrato;
+  return r;
 }

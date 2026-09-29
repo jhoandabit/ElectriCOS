@@ -51,9 +51,10 @@ function filaMedidor(t: string): Partial<DatosEstructura> | null {
 
 /** "14/AGO/2026 - 10/SEP/2026  28" → periodo y días. */
 function rangoFechas(t: string): Partial<DatosEstructura> | null {
-  const patron = new RegExp(
-    String.raw`(\d{1,2}\s*[/\-.]\s*(?:${MESES_CORTOS}|\d{1,2})[a-z]*\s*[/\-.]\s*20\d{2})\s*(?:-|a|al|hasta)\s*(\d{1,2}\s*[/\-.]\s*(?:${MESES_CORTOS}|\d{1,2})[a-z]*\s*[/\-.]\s*20\d{2})(?:\s+(\d{1,3})\b)?`
-  );
+  // Una fecha: "14/ago/2026", "14-08-2026" y lo que deja el OCR: "14ago/2026", "14/ag0/2026".
+  // Si el mes no es válido, fechasEnTexto lo descarta más abajo.
+  const FECHA = String.raw`\d{1,2}\s*(?:[/\-.]\s*[a-z0-9]{2,10}|[a-z][a-z0-9]{2,9})\s*[/\-.]\s*20\d{2}`;
+  const patron = new RegExp(String.raw`(${FECHA})\s*(?:-|a|al|hasta)\s*(${FECHA})(?:\s+(\d{1,3})\b)?`);
   const m = t.match(patron);
   if (!m) return null;
   const [inicio] = fechasEnTexto(m[1]);
