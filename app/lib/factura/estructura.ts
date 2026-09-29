@@ -82,9 +82,12 @@ function municipioYUso(textoOriginal: string): string | null {
   return m ? m[1].trim() : null;
 }
 
-/** EEP: "CT0172  4" (transformador seguido del estrato). */
+/**
+ * EEP: "CT0172  4" (transformador seguido del estrato).
+ * El OCR puede leer "CT0" como "CTo", "Cro" o "C70".
+ */
 function estratoTrasTransformador(t: string): number | null {
-  const m = t.match(/\bct\d{3,6}\s+([1-6])\b/);
+  const m = t.match(/\bc[tr7][o0]\d{3,5}\s+([1-6])\b/);
   return m ? Number(m[1]) : null;
 }
 

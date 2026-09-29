@@ -1,0 +1,20 @@
+SUSCRIPTOR / DATOS TÉCNICOS  MATRÍCULA  >>  0000000
+Fecha de Emisidón:  14/SEP/2026  ASEO:  0
+Ruta:00-00-000-0000  Municipic: 147 Cmrtag  Servicio: Residaneial Ciclo: 10g  21/SEP/2026  SUBTOTAL SIN ENERGÍA:
+Me quedo sin  1G  G  30,011
+Transformador:CTo172  x Contribución:  Subsidioc  Estrato; 4  ENERGÍA:  319,853
+Carga contratada (Kw);  Geupo caidad: 12  Oroultox  8MO4  NT:  1  Documento equivalentea a
+DEL0000000  TOTAL  $349,864
+INFORMACIÓN DE CONSUMO  ALUMBRADO PÓBLICO  26.800
+415  353  Mms  kwh  alor  BAsdrtunds  MUNICIPIO DE CARTAGO
+258280  28  287  MAR  162.374  COD  CONCEPTO  VALOR MES  TOTAL
+MAR ABR MAY JUN JUL AGO ACTPROM  91s00423-2
+Responsabe de Aμumbradlo Pitlicoc  Cartago  NK
+Activa  1408001303  GNS  19840  19487  353  1  353  267
+Reactiva  十  OTRAS EMPRESAS  3,211
+Peripdo facturado:  SMUAGOG06-1NSEP经委26  Dim facturadas  21  otservación.  COD  CONCEPTO  DEUDAANTERKOR  VALOR MES  TOTAL
+905a529  AGO-2026  24  Intarea Taa Seguridad CorvD  16  16
+LIQUIDACIÓN DEL CONSUMO ACTUAL
+Rango  ConsumokWh  Valor kWh  Total energia  Subsidio  Total
+0-173  173  205.0529  156,574  a  156,574
+>173  180  505.0529  162,210  162,91D  恒  ASEO

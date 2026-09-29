@@ -38,6 +38,8 @@ export type DatosFactura = {
   /** Valor total a pagar en pesos */
   totalPagar: number | null;
   historico: PuntoHistorico[];
+  /** true si el periodo no se leyó sino que se dedujo de la fecha de emisión */
+  periodoEstimado?: boolean;
 };
 
 export type AvisoLectura = {

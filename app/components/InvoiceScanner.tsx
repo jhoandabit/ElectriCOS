@@ -222,8 +222,8 @@ export default function InvoiceScanner({ onUsar }: Props) {
                 <span>Consumo</span>
                 <strong>{campo(d.consumoKwh, " kWh")}</strong>
               </div>
-              <div className={clase(Boolean(d.periodo))}>
-                <span>Periodo</span>
+              <div className={clase(Boolean(d.periodo) && !d.periodoEstimado)}>
+                <span>Periodo{d.periodoEstimado ? " (estimado)" : ""}</span>
                 <strong>{campo(d.periodo)}</strong>
               </div>
               <div className={clase(d.diasFacturados !== null)}>

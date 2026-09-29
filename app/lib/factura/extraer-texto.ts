@@ -36,21 +36,53 @@ function primerNumeroTras(texto: string, etiqueta: RegExp, ventana = 60): number
   return m ? parseNumeroCO(m[m.length - 1]) : null;
 }
 
+/** Número mínimo de letras que hay que cambiar para pasar de a a b (Levenshtein). */
+export function distanciaEdicion(a: string, b: string): number {
+  const fila = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    let diagonal = fila[0];
+    fila[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const arriba = fila[j];
+      fila[j] = Math.min(fila[j] + 1, fila[j - 1] + 1, diagonal + (a[i - 1] === b[j - 1] ? 0 : 1));
+      diagonal = arriba;
+    }
+  }
+  return fila[b.length];
+}
+
 /**
  * Si el texto contiene un municipio conocido, devuelve su nombre bien escrito.
- * Corrige lecturas como "Cartago Serviclo" (OCR que pegó la palabra siguiente).
+ * Corrige lecturas como "Cartago Serviclo" (OCR que pegó la palabra siguiente)
+ * y, en nombres largos, hasta 2 letras mal leídas ("Ctago", "Cmrtag" → Cartago).
  */
 export function municipioConocido(candidato: string | null): string | null {
   if (!candidato) return null;
   const c = normalizarTexto(candidato);
-  const conocido = [...MUNICIPIOS_CONOCIDOS]
-    .sort((a, b) => b.length - a.length)
-    .find((m) => new RegExp(`(^|\\s)${normalizarTexto(m)}($|\\s)`).test(c));
-  return conocido ?? candidato;
+  const ordenados = [...MUNICIPIOS_CONOCIDOS].sort((a, b) => b.length - a.length);
+  const exacto = ordenados.find((m) => new RegExp(`(^|\\s)${normalizarTexto(m)}($|\\s)`).test(c));
+  if (exacto) return exacto;
+
+  // Tolerancia a errores del OCR: se compara la primera palabra (o dos) del
+  // candidato con cada municipio de 6 letras o más. Nombres cortos como
+  // "Toro" o "Cali" se parecen a demasiadas palabras y no se corrigen.
+  const palabras = c.split(" ");
+  const opciones = [palabras[0], palabras.slice(0, 2).join(" "), palabras.slice(0, 3).join(" ")];
+  let mejor: { nombre: string; d: number } | null = null;
+  for (const m of MUNICIPIOS_CONOCIDOS) {
+    const n = normalizarTexto(m);
+    if (n.length < 6) continue;
+    for (const o of opciones) {
+      if (o.length < 4) continue;
+      const d = distanciaEdicion(o, n);
+      if (d <= 2 && (!mejor || d < mejor.d)) mejor = { nombre: m, d };
+    }
+  }
+  return mejor?.nombre ?? candidato;
 }
 
 function buscarMunicipio(t: string): string | null {
-  const m = t.match(/municipio\s*[:.\-]?\s*(?:de\s+)?(?:\d{1,5}\s*[-.]?\s*)?([a-z][a-z .]{2,30}?)(?=\s{2,}|\s*[-,:/(]|\s+(?:depto|departamento|ciclo|estrato|servicio|barrio|ruta|valle|risaralda|caldas)|\n|$)/);
+  const m = t.match(/municipi[oc0]\s*[:.\-]?\s*(?:de\s+)?(?:\d{1,5}\s*[-.]?\s*)?([a-z][a-z .]{2,30}?)(?=\s{2,}|\s*[-,:/(]|\s+(?:depto|departamento|ciclo|estrato|servicio|barrio|ruta|valle|risaralda|caldas)|\n|$)/);
   if (m) {
     const candidato = m[1].trim();
     const conocido = MUNICIPIOS_CONOCIDOS.find((x) => normalizarTexto(x) === candidato);
@@ -72,7 +104,8 @@ function buscarMunicipio(t: string): string | null {
 
 function buscarEstrato(t: string): number | null {
   const patrones = [
-    /estrato\s*(?:socio\s*economico)?\s*[:.\-]?\s*0?([1-6])\b/,
+    // El OCR a veces lee ":" como ";" o "," ("Estrato; 4").
+    /estrato\s*(?:socio\s*economico)?\s*[:;,.\-]?\s*0?([1-6])\b/,
     /\best\.?\s*[:.]?\s*0?([1-6])\b/,
     /residencial\s*(?:estrato\s*)?[-:]?\s*0?([1-6])\b/,
     /\bres\.?\s*0?([1-6])\b/,
@@ -83,6 +116,22 @@ function buscarEstrato(t: string): number | null {
     if (m) return Number(m[1]);
   }
   return null;
+}
+
+/**
+ * Respaldo cuando el periodo no se pudo leer (letra muy pequeña en la foto):
+ * la "Fecha de emisión" suele leerse bien porque está en letra grande.
+ * La factura se emite pocos días después de la última lectura
+ * (EEP: lectura 10 sep, emisión 14 sep), así que el mes de la lectura es
+ * el de la fecha de emisión menos 5 días. Es una ESTIMACIÓN: se avisa.
+ */
+export function periodoDesdeEmision(t: string): string | null {
+  const m = t.match(/fecha\s*de\s*(?:emi[a-z]*|expedi[a-z]*)?\s*[:;.]?\s*(\d{1,2}\s*[/\-.]\s*[a-z0-9]{2,10}\s*[/\-.]\s*20\d{2})/);
+  if (!m) return null;
+  const [emision] = fechasEnTexto(m[1]);
+  if (!emision) return null;
+  const referencia = new Date(emision.getTime() - 5 * 86_400_000);
+  return formatoPeriodo(referencia.getUTCFullYear(), referencia.getUTCMonth() + 1);
 }
 
 function buscarDias(t: string): number | null {
@@ -256,6 +305,10 @@ export function extraerDeTexto(textoOriginal: string): DatosFactura {
   if (e.diasFacturados) datos.diasFacturados = e.diasFacturados;
   if (e.municipio) datos.municipio = e.municipio;
   datos.municipio = municipioConocido(datos.municipio);
+  if (!datos.periodo) {
+    datos.periodo = periodoDesdeEmision(t);
+    if (datos.periodo) datos.periodoEstimado = true;
+  }
   if (e.estrato && datos.estrato === null) datos.estrato = e.estrato;
   if (e.valorKwh) datos.valorKwh = e.valorKwh;
   if (e.totalPagar) datos.totalPagar = e.totalPagar;

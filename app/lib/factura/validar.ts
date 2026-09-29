@@ -130,6 +130,14 @@ export function validarYCompletar(entrada: DatosFactura): {
     }
   }
 
+  if (datos.periodo && datos.periodoEstimado) {
+    avisos.push({
+      nivel: "revisar",
+      campo: "periodo",
+      mensaje: `El periodo (${datos.periodo}) no se pudo leer y se dedujo de la fecha de emisión. Confírmalo en la factura.`,
+    });
+  }
+
   const faltan: string[] = [];
   if (!datos.municipio) faltan.push("municipio");
   if (!datos.estrato) faltan.push("estrato");

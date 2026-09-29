@@ -107,3 +107,41 @@ test("OCR de foto torcida: los renglones no se parten", () => {
   assert.equal(d.consumoKwh, 353);
   assert.equal(d.lecturaActual, 19840);
 });
+
+// Texto REAL que PaddleOCR leyó de una captura de pantalla pequeña (616×500)
+// de la factura de referencia, sin ampliar (1x) y ampliada al doble (2x).
+// Datos personales borrados. El periodo "14/AGO/2026 - 10/SEP/2026" sale
+// ilegible ("6MAG0行026-105EPG224") y los días salen "21" en vez de 28.
+for (const [nombre, archivo] of [["1x", "eep-ocr-captura-1x.txt"], ["2x", "eep-ocr-captura-2x.txt"]]) {
+  test(`captura pequeña leída por OCR (${nombre}): lo que sí se puede rescatar`, () => {
+    const texto = readFileSync(new URL(`./fixtures/${archivo}`, import.meta.url), "utf8");
+    const { datos, avisos } = validarYCompletar(extraerDeTexto(texto));
+    assert.equal(datos.consumoKwh, 353);
+    assert.equal(datos.lecturaAnterior, 19487);
+    assert.equal(datos.lecturaActual, 19840);
+    assert.equal(datos.municipio, "Cartago");
+    assert.equal(datos.estrato, 4); // "Cro172  4" (1x) o "Estrato; 4" (2x)
+    // El periodo se deduce de la fecha de emisión (14/SEP/2026) y se avisa.
+    assert.equal(datos.periodo, "2026-09");
+    assert.equal(datos.periodoEstimado, true);
+    assert.ok(avisos.some((a) => a.campo === "periodo" && a.nivel === "revisar"));
+    // Días ilegibles: NO se inventan (el OCR leyó "Dim facturadas 21", que es falso).
+    assert.equal(datos.diasFacturados, null);
+  });
+}
+
+test("municipio con letras mal leídas por el OCR", () => {
+  assert.equal(municipioConocido("Ctago"), "Cartago");
+  assert.equal(municipioConocido("Cmrtag"), "Cartago");
+  assert.equal(municipioConocido("Dosquebradaz"), "Dosquebradas");
+  // Nombres que no se parecen a ninguno se dejan como vienen.
+  assert.equal(municipioConocido("Sevilla"), "Sevilla");
+});
+
+test("el PDF sigue leyendo el periodo real, no el estimado", () => {
+  const texto = readFileSync(new URL("./fixtures/eep-factura-referencia.txt", import.meta.url), "utf8");
+  const datos = extraerDeTexto(texto);
+  assert.equal(datos.periodo, "2026-09");
+  assert.equal(datos.periodoEstimado, undefined);
+  assert.equal(datos.diasFacturados, 28);
+});
