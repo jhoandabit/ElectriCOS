@@ -1381,7 +1381,28 @@ button:disabled {
   border: 1px solid transparent;
   transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
 }
-.tarjeta.abierta { grid-column: 1 / -1; border-color: var(--border); box-shadow: 0 10px 26px rgba(31, 43, 56, 0.1); }
+.tarjetas { position: relative; }
+.tarjeta.abierta { z-index: 6; }
+/* Velo transparente: tocar fuera de la tarjeta abierta la cierra. */
+.tarjetas-velo { position: fixed; inset: 0; z-index: 5; border: 0; background: rgba(31, 43, 56, 0.18); cursor: default; animation: tarjeta-velo 0.2s ease; }
+@keyframes tarjeta-velo { from { opacity: 0; } to { opacity: 1; } }
+/* Copia ampliada que flota encima: el doble de ancho (más el espacio entre columnas). */
+.tarjeta-flotante {
+  position: absolute;
+  top: -6px;
+  width: calc(200% + 10px);
+  z-index: 7;
+  border-radius: 18px;
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: 0 22px 50px rgba(31, 43, 56, 0.28);
+  animation: tarjeta-crece 0.22s ease;
+}
+.tarjeta-flotante.hacia-derecha { left: -6px; transform-origin: top left; }
+.tarjeta-flotante.hacia-izquierda { right: -6px; transform-origin: top right; }
+.tono-alerta > .tarjeta-flotante { background-color: #fff4ec; }
+.tono-bien > .tarjeta-flotante { background-color: #f7fbef; }
+@keyframes tarjeta-crece { from { opacity: 0; transform: scale(0.6); } to { opacity: 1; transform: scale(1); } }
 .tarjeta-cara {
   appearance: none;
   border: 0;
@@ -1420,12 +1441,12 @@ button:disabled {
   .tarjeta:not(.abierta):hover { transform: scale(1.045); box-shadow: 0 12px 28px rgba(31, 43, 56, 0.14); z-index: 2; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .tarjeta, .tarjeta-detalle { transition: none; animation: none; }
+  .tarjeta, .tarjeta-detalle, .tarjeta-flotante, .tarjetas-velo { transition: none; animation: none; }
   .tarjeta:not(.abierta):hover { transform: none; }
 }
 @media (max-width: 340px) {
   .tarjetas { grid-template-columns: 1fr; }
-  .tarjetas > .tarjeta { order: 0 !important; }
+  .tarjeta-flotante { width: calc(100% + 12px); }
 }
 .selector-mes { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 18px; font-size: 14px; font-weight: 700; color: var(--fg); }
 .selector-mes select { flex: 1; max-width: 220px; min-height: 42px; padding: 0 10px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface); font: inherit; font-weight: 600; color: var(--fg); }

@@ -214,34 +214,41 @@ export default function ResultadoMes({ registro, hogar, registros, parametros }:
         <small>Toca una tarjeta para ver la explicación</small>
       </div>
 
-      <div className="tarjetas">
+      <div className={"tarjetas" + (abierta ? " con-abierta" : "")} onKeyDown={(e) => e.key === "Escape" && setAbierta(null)}>
+        {abierta && <button type="button" className="tarjetas-velo" aria-label="Cerrar la tarjeta" onClick={() => setAbierta(null)} />}
         {tarjetas.map((t, i) => {
           const abiertaEsta = abierta === t.id;
-          // La tarjeta abierta ocupa todo el ancho de SU fila. Si está en la
-          // columna derecha (i impar), se pone antes de su vecina izquierda
-          // para que no quede un hueco ni baje de fila.
-          const orden = abiertaEsta && i % 2 === 1 ? (i - 1) * 2 - 1 : i * 2;
+          const cara = (
+            <>
+              <span className="tarjeta-pregunta"><span aria-hidden="true">{t.icono}</span> {t.pregunta}</span>
+              <strong className="tarjeta-valor">{t.valor}</strong>
+              <span className="tarjeta-sub">{t.sub}</span>
+            </>
+          );
           return (
             <article
               key={t.id}
-              style={{ order: orden }}
               className={"tarjeta" + (abiertaEsta ? " abierta" : "") + (t.tono ? ` tono-${t.tono}` : "")}
             >
-              <button
-                type="button"
-                className="tarjeta-cara"
-                aria-expanded={abiertaEsta}
-                aria-controls={`detalle-${t.id}`}
-                onClick={() => setAbierta(abiertaEsta ? null : t.id)}
-              >
-                <span className="tarjeta-pregunta"><span aria-hidden="true">{t.icono}</span> {t.pregunta}</span>
-                <strong className="tarjeta-valor">{t.valor}</strong>
-                <span className="tarjeta-sub">{t.sub}</span>
-                <span className="tarjeta-mas" aria-hidden="true">{abiertaEsta ? "Cerrar ✕" : "Ver más +"}</span>
+              {/* La tarjeta cerrada nunca cambia de tamaño: la grilla no se mueve. */}
+              <button type="button" className="tarjeta-cara" aria-expanded={abiertaEsta} onClick={() => setAbierta(abiertaEsta ? null : t.id)}>
+                {cara}
+                <span className="tarjeta-mas" aria-hidden="true">Ver más +</span>
               </button>
+
+              {/* Abierta: una copia ampliada que flota ENCIMA de las demás y
+                  crece hacia el lado donde hay espacio. Al cerrarla, todo sigue en su sitio. */}
               {abiertaEsta && (
-                <div className="tarjeta-detalle" id={`detalle-${t.id}`}>
-                  {t.detalle}
+                <div
+                  className={"tarjeta-flotante " + (i % 2 === 0 ? "hacia-derecha" : "hacia-izquierda")}
+                  role="dialog"
+                  aria-label={t.pregunta}
+                >
+                  <button type="button" className="tarjeta-cara" onClick={() => setAbierta(null)} autoFocus>
+                    {cara}
+                    <span className="tarjeta-mas">Cerrar ✕</span>
+                  </button>
+                  <div className="tarjeta-detalle">{t.detalle}</div>
                 </div>
               )}
             </article>
