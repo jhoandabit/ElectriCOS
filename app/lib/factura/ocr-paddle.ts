@@ -54,7 +54,11 @@ export function cargarLector(): Promise<Ocr> {
       worker: true, // en segundo plano: la pantalla no se congela
       // WebGPU si existe; si no, WebAssembly. En iPhone, siempre WebAssembly:
       // WebGPU de Safari reserva mucha memoria y la pestaña se cae.
-      ortOptions: esIOS() ? { backend: "wasm", numThreads: 1, wasmPaths: "/ort/" } : { backend: "auto", wasmPaths: "/ort/" },
+      // Con aislamiento de origen (next.config.ts) se usan varios núcleos; en
+      // iPhone máximo 2, para no pedir demasiada memoria.
+      ortOptions: esIOS()
+        ? { backend: "wasm", numThreads: self.crossOriginIsolated ? 2 : 1, wasmPaths: "/ort/" }
+        : { backend: "auto", wasmPaths: "/ort/" },
     });
     return ocr as unknown as Ocr;
   })().catch((e) => {
