@@ -9,7 +9,7 @@
 
 import { esPdf, leerPdf, prepararFoto } from "./archivos";
 import { extraerDeTexto } from "./extraer-texto";
-import { agruparEnRenglones, leerTextoVertical, reconocer } from "./ocr-paddle";
+import { agruparEnRenglones, leerGraficoDeBarras, reconocer } from "./ocr-paddle";
 import type { AvisoLectura, DatosFactura, FuenteLectura, ResultadoLectura } from "./tipos";
 import { validarYCompletar } from "./validar";
 
@@ -27,14 +27,17 @@ async function leerImagen(imagen: HTMLCanvasElement, alProgresar: AlProgresar): 
   const cajas = await lectura;
   let texto = agruparEnRenglones(cajas).join("\n");
 
-  // Gráfico de "últimos consumos" con los kWh escritos de lado (Celsia):
-  // si hay un renglón de meses que termina en "Actual", se leen las cajas
-  // verticales y se agregan justo encima de una copia de ese renglón.
-  const meses = texto.split("\n").find((l) => /\bactual\b/i.test(l) && (l.match(/\b(ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic)\b/gi)?.length ?? 0) >= 3);
-  if (meses) {
+  // Gráfico de "últimos consumos": se leen las columnas por separado y se
+  // agregan al texto en un formato que extraer-texto entiende:
+  //   "119 kWh  112 kWh  …  314 kWh" / "SEP  NOV  …  Actual".
+  // Una columna ilegible queda en 0 y la validación la descarta (se escribe a mano).
+  if (/\b(ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic)\b/i.test(texto)) {
     alProgresar("Leyendo el gráfico de consumos…");
-    const vertical = await leerTextoVertical(imagen, cajas).catch(() => null);
-    if (vertical) texto += `\n${vertical}\n${meses}`;
+    const g = await leerGraficoDeBarras(imagen, cajas).catch(() => null);
+    if (g) {
+      const valores = [...g.valores, g.actual].map((v) => `${v ?? 0} kWh`).join("  ");
+      texto += `\n${valores}\n${g.meses.join("  ")}  Actual`;
+    }
   }
   return texto;
 }

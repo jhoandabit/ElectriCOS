@@ -60,10 +60,9 @@ export default function ConsumoForm({ hogar, registros, parametros, lectura, met
   // Por defecto se guardan también los meses anteriores que trae la factura:
   // así la familia tiene su promedio (línea base) desde el primer día.
   const [conHistorico, setConHistorico] = useState(true);
-  // Si la factura no dejó leer los meses anteriores (foto borrosa, otra
-  // empresa…), la persona puede escribirlos mirando la factura.
+  // Meses anteriores: una sola tabla editable, llena con lo que se leyó de
+  // la factura; lo que falte (foto borrosa, columna mal leída) se escribe.
   const [aMano, setAMano] = useState<Record<string, { kwh: string; dias: string }>>({});
-  const [verAMano, setVerAMano] = useState(false);
 
   const set = (k: keyof Campos, v: string) => {
     setC((x) => ({ ...x, [k]: v }));
@@ -83,16 +82,31 @@ export default function ConsumoForm({ hogar, registros, parametros, lectura, met
   const d = lectura?.datos;
   const hogarDistinto = d && ((d.estrato && d.estrato !== hogar.estrato) || (d.municipio && d.municipio.toLowerCase() !== hogar.municipio.toLowerCase()));
   const historicoNuevo = (d?.historico ?? []).filter((p) => p.periodo < c.periodo && !registros.some((r) => r.periodo === p.periodo));
-  // Los 6 meses anteriores al periodo que todavía no están guardados.
+  // ¿Mensual o bimestral? El salto entre los meses que trae la factura
+  // (Celsia en fincas: SEP NOV ENE… = cada 2 meses). Sin datos: mensual.
+  const leidos = new Map(historicoNuevo.map((p) => [p.periodo, p]));
+  const aIndice = (p: string) => Number(p.slice(0, 4)) * 12 + Number(p.slice(5, 7)) - 1;
+  const saltos = [...(d?.historico ?? []).map((p) => p.periodo), c.periodo]
+    .sort()
+    .map((p, i, arr) => (i ? aIndice(p) - aIndice(arr[i - 1]) : 0))
+    .filter((x) => x > 0 && x <= 3);
+  const salto = saltos.length ? [...saltos].sort((x, y) => saltos.filter((v) => v === y).length - saltos.filter((v) => v === x).length)[0] : 1;
+  const diasTipicos = salto > 1 ? Math.round(salto * 30.4) : null;
   const mesesPrevios: string[] = [];
-  for (let m = mesAnterior(c.periodo), k = 0; k < 6; k++, m = mesAnterior(m)) {
-    if (!registros.some((r) => r.periodo === m)) mesesPrevios.unshift(m);
+  let mesFila = c.periodo;
+  for (let k = 0; k < 6; k++) {
+    for (let j = 0; j < salto; j++) mesFila = mesAnterior(mesFila);
+    if (!registros.some((r) => r.periodo === mesFila)) mesesPrevios.unshift(mesFila);
   }
+  const valorFila = (m: string) => ({
+    kwh: aMano[m]?.kwh ?? (leidos.has(m) ? String(leidos.get(m)!.kwh) : ""),
+    dias: aMano[m]?.dias ?? (leidos.get(m)?.dias !== undefined ? String(leidos.get(m)!.dias) : diasTipicos && leidos.size ? String(diasTipicos) : ""),
+  });
   const escritos = mesesPrevios
-    .filter((m) => aMano[m]?.kwh)
-    .map((m) => ({ periodo: m, kwh: Number(aMano[m].kwh), dias: aMano[m].dias ? Number(aMano[m].dias) : undefined }));
+    .filter((m) => valorFila(m).kwh)
+    .map((m) => ({ periodo: m, kwh: Number(valorFila(m).kwh), dias: valorFila(m).dias ? Number(valorFila(m).dias) : undefined }));
   const ponerAMano = (m: string, campo: "kwh" | "dias", v: string) =>
-    setAMano((x) => ({ ...x, [m]: { kwh: x[m]?.kwh ?? "", dias: x[m]?.dias ?? "", [campo]: v } }));
+    setAMano((x) => ({ ...x, [m]: { ...valorFila(m), ...x[m], [campo]: v } }));
 
   const enviar = async (e: FormEvent) => {
     e.preventDefault();
@@ -127,7 +141,7 @@ export default function ConsumoForm({ hogar, registros, parametros, lectura, met
           setAvisoTraza("El consumo se guardó, pero no la traza de la lectura.")
         );
       }
-      const meses = historicoNuevo.length ? (conHistorico ? historicoNuevo : []) : escritos;
+      const meses = conHistorico ? escritos : [];
       if (meses.length) {
         // Tampoco bloquea: si falla, se puede reintentar con el botón de después.
         try {
@@ -255,63 +269,45 @@ export default function ConsumoForm({ hogar, registros, parametros, lectura, met
         </div>
       </div>
 
-      {historicoNuevo.length > 0 && (
+      {mesesPrevios.length > 0 && (
         <div className="form-section historico-factura">
-          <h3>Meses anteriores que trae la factura</h3>
+          <h3>Meses anteriores{salto > 1 ? " (cobro cada 2 meses)" : ""}</h3>
           <p className="field-help">
-            La factura imprime el consumo de los meses pasados. Si los guardas, ElectriCOs calcula tu promedio de una vez y no tienes que
-            esperar 3 meses para proponer una meta.
+            {leidos.size === 0
+              ? lectura
+                ? "No pudimos leer los meses anteriores. Búscalos en la tabla o gráfico de \"últimos consumos\" de la factura y escríbelos: así tendrás tu promedio de una vez."
+                : "Si tienes los consumos de meses anteriores, escríbelos aquí y tendrás tu promedio de una vez."
+              : leidos.size < mesesPrevios.length
+                ? `Leímos ${leidos.size} de ${mesesPrevios.length} en la factura. Revísalos y completa los que falten mirando la factura.`
+                : "Estos son los que trae la factura. Revísalos; puedes corregir cualquier número."}
           </p>
-          <table>
+          <table className="tabla-a-mano">
             <thead>
               <tr><th>Mes</th><th>kWh</th><th>Días</th></tr>
             </thead>
             <tbody>
-              {historicoNuevo.map((p) => (
-                <tr key={p.periodo}><td>{nombreMes(p.periodo)}</td><td>{p.kwh}</td><td>{p.dias ?? "—"}</td></tr>
-              ))}
-            </tbody>
-          </table>
-          <label className="check-row">
-            <input type="checkbox" checked={conHistorico} onChange={(e) => setConHistorico(e.target.checked)} />
-            <span>Guardar también estos {historicoNuevo.length} meses (recomendado)</span>
-          </label>
-        </div>
-      )}
-
-      {historicoNuevo.length === 0 && mesesPrevios.length > 0 && (
-        <div className="form-section historico-factura">
-          <h3>Meses anteriores</h3>
-          <p className="field-help">
-            {lectura
-              ? "No pudimos leer los meses anteriores en la factura. Casi todas los traen en una tabla o gráfico de \"últimos consumos\": escríbelos aquí y tendrás tu promedio de una vez."
-              : "Si tienes los consumos de meses anteriores (en esta u otras facturas), escríbelos aquí y tendrás tu promedio de una vez."}
-          </p>
-          {!verAMano ? (
-            <button type="button" className="secondary-button" onClick={() => setVerAMano(true)}>
-              Escribir los meses anteriores
-            </button>
-          ) : (
-            <table className="tabla-a-mano">
-              <thead>
-                <tr><th>Mes</th><th>kWh</th><th>Días</th></tr>
-              </thead>
-              <tbody>
-                {mesesPrevios.map((m) => (
-                  <tr key={m}>
+              {mesesPrevios.map((m) => {
+                const v = valorFila(m);
+                return (
+                  <tr key={m} className={leidos.has(m) && aMano[m] === undefined ? "leido" : ""}>
                     <td>{nombreMes(m)}</td>
                     <td>
-                      <input type="number" inputMode="numeric" min={1} max={4999} aria-label={`kWh de ${nombreMes(m)}`} value={aMano[m]?.kwh ?? ""} onChange={(e) => ponerAMano(m, "kwh", e.target.value)} placeholder="kWh" />
+                      <input type="number" inputMode="numeric" min={1} max={4999} aria-label={`kWh de ${nombreMes(m)}`} value={v.kwh} onChange={(e) => ponerAMano(m, "kwh", e.target.value)} placeholder="kWh" />
                     </td>
                     <td>
-                      <input type="number" inputMode="numeric" min={1} max={120} aria-label={`Días de ${nombreMes(m)}`} value={aMano[m]?.dias ?? ""} onChange={(e) => ponerAMano(m, "dias", e.target.value)} placeholder="días" />
+                      <input type="number" inputMode="numeric" min={1} max={120} aria-label={`Días de ${nombreMes(m)}`} value={v.dias} onChange={(e) => ponerAMano(m, "dias", e.target.value)} placeholder="días" />
                     </td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                );
+              })}
+            </tbody>
+          </table>
+          {escritos.length > 0 && (
+            <label className="check-row">
+              <input type="checkbox" checked={conHistorico} onChange={(e) => setConHistorico(e.target.checked)} />
+              <span>Guardar también estos {escritos.length} {escritos.length === 1 ? "mes" : "meses"} (recomendado)</span>
+            </label>
           )}
-          {escritos.length > 0 && <span className="field-help">Se guardarán {escritos.length} {escritos.length === 1 ? "mes" : "meses"} junto con este.</span>}
         </div>
       )}
 

@@ -127,46 +127,65 @@ function girar90(origen: HTMLCanvasElement, horario: boolean) {
   return c;
 }
 
+type Rotulo = { texto: string; cx: number; y0: number; cy: number };
+
 /**
- * Algunas facturas (p. ej. Celsia) escriben los kWh DE LADO dentro de las
- * barras del gráfico ("119 kWh" de abajo hacia arriba). El lector normal no
- * los entiende. Aquí se usan los rótulos de los meses (SEP NOV … Actual) para
- * ubicar cada columna, se recorta la franja que queda encima de cada rótulo,
- * se gira 90° y se lee. Devuelve un renglón "119 kWh  112 kWh  …" en el orden
- * de los meses, o null si no se pudo leer TODAS las columnas.
+ * Gráfico de barras de "últimos consumos". Se ubica cada columna por su
+ * rótulo (SEP NOV … o MAR ABR … ACT PROM) y se busca el valor encima:
+ *   1. Un número escrito derecho encima del rótulo (Energía de Pereira).
+ *   2. Si no hay, se recorta la franja, se gira 90° y se lee (Celsia escribe
+ *      "119 kWh" de lado dentro de la barra).
+ * Devuelve los meses en orden, su valor (null si no se pudo leer) y el valor
+ * de la barra "Actual" si existe.
  */
-export async function leerTextoVertical(imagen: HTMLCanvasElement, cajas: CajaTexto[]): Promise<string | null> {
-  const rotulos = cajas
-    .filter((c) => /^(ene|feb|mar|abr|may|jun|jul|ago|sep|sept|oct|nov|dic|actual)\.?$/i.test(c.texto.trim()))
-    .map((c) => {
-      const xs = c.poligono.map((p) => p[0]);
-      const ys = c.poligono.map((p) => p[1]);
-      return { cx: (Math.min(...xs) + Math.max(...xs)) / 2, y0: Math.min(...ys), cy: (Math.min(...ys) + Math.max(...ys)) / 2 };
-    });
-  if (rotulos.length < 4) return null;
-  // Los rótulos del gráfico están en un mismo renglón: se toma el grupo más grande.
+export async function leerGraficoDeBarras(
+  imagen: HTMLCanvasElement,
+  cajas: CajaTexto[]
+): Promise<{ meses: string[]; valores: (number | null)[]; actual: number | null } | null> {
+  const medidas = cajas.map((c) => {
+    const xs = c.poligono.map((p) => p[0]);
+    const ys = c.poligono.map((p) => p[1]);
+    return { texto: c.texto.trim(), x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) };
+  });
+
+  const rotulos: Rotulo[] = [];
+  for (const m of medidas) {
+    const t = m.texto.toLowerCase().replace(/[^a-z]/g, "");
+    const cy = (m.y0 + m.y1) / 2;
+    if (/^(ene|feb|mar|abr|may|jun|jul|ago|sep|sept|oct|nov|dic|actual|act|prom)$/.test(t)) {
+      rotulos.push({ texto: t, cx: (m.x0 + m.x1) / 2, y0: m.y0, cy });
+    } else if (/^act(ual)?prom(edio)?$/.test(t)) {
+      // "ACTPROM": dos rótulos pegados por el lector.
+      const w = m.x1 - m.x0;
+      rotulos.push({ texto: "act", cx: m.x0 + w / 4, y0: m.y0, cy }, { texto: "prom", cx: m.x0 + (3 * w) / 4, y0: m.y0, cy });
+    }
+  }
   const grupos = rotulos.map((r) => rotulos.filter((o) => Math.abs(o.cy - r.cy) < 12));
-  const fila = grupos.sort((a, b) => b.length - a.length)[0].sort((a, b) => a.cx - b.cx);
-  if (fila.length < 4) return null;
+  const fila = (grupos.sort((a, b) => b.length - a.length)[0] ?? []).sort((a, b) => a.cx - b.cx);
+  const meses = fila.filter((r) => !/^(act|actual|prom)$/.test(r.texto));
+  const act = fila.find((r) => /^(act|actual)$/.test(r.texto));
+  if (meses.length < 3 || !act) return null;
   const pasos = fila.slice(1).map((r, i) => r.cx - fila[i].cx).sort((a, b) => a - b);
   const paso = pasos[Math.floor(pasos.length / 2)];
   if (!(paso > 10)) return null;
 
-  // Cajas horizontales (textos normales) para no meter en el recorte, por
-  // ejemplo, el "Promedio últimos 6 meses: 275 kWh" que está encima del gráfico.
-  const horizontales = cajas.map((c) => {
-    const xs = c.poligono.map((p) => p[0]);
-    const ys = c.poligono.map((p) => p[1]);
-    return { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) };
-  }).filter((c) => c.x1 - c.x0 > (c.y1 - c.y0) * 2);
+  const horizontales = medidas.filter((c) => c.x1 - c.x0 > (c.y1 - c.y0) * 1.2);
 
-  const textos: string[] = [];
-  for (const r of fila) {
+  const leerColumna = async (r: Rotulo): Promise<number | null> => {
     const sx = Math.max(0, Math.round(r.cx - paso * 0.3));
     const sw = Math.min(imagen.width - sx, Math.round(paso * 0.6));
-    let sy = Math.max(0, Math.round(r.y0 - paso * 2.4)); // la zona de las barras, encima del rótulo
+    const techo = r.y0 - paso * 2.6;
+    // 1. Número derecho encima del rótulo, dentro de la columna (el más cercano).
+    const derechos = horizontales
+      .filter((h) => (h.x0 + h.x1) / 2 > r.cx - paso * 0.45 && (h.x0 + h.x1) / 2 < r.cx + paso * 0.45 && h.y1 < r.y0 - 1 && h.y0 > techo)
+      .filter((h) => /^\d{2,4}(\s*k\s*wh?)?$/i.test(h.texto.replace(/\s+/g, " ")))
+      .sort((a, b) => b.y1 - a.y1);
+    if (derechos.length) return Number(derechos[0].texto.match(/\d{2,4}/)![0]);
+
+    // 2. Texto de lado: recortar la franja (sin textos horizontales de arriba), girar y leer.
+    let sy = Math.max(0, Math.round(techo));
     for (const h of horizontales) {
-      if (h.x1 > sx && h.x0 < sx + sw && h.y1 < r.y0 - 8 && h.y1 + 2 > sy) sy = Math.round(h.y1 + 2);
+      if (h.x1 > sx && h.x0 < sx + sw && h.y1 < r.y0 - 8 && h.y1 + 2 > sy && h.x1 - h.x0 > paso) sy = Math.round(h.y1 + 2);
     }
     const sh = Math.round(r.y0 - 2 - sy);
     if (sw < 8 || sh < 8) return null;
@@ -178,19 +197,16 @@ export async function leerTextoVertical(imagen: HTMLCanvasElement, cajas: CajaTe
     if (!ctx) return null;
     ctx.imageSmoothingQuality = "high";
     ctx.drawImage(imagen, sx, sy, sw, sh, 0, 0, recorte.width, recorte.height);
-
-    // Primero girando a la derecha (texto escrito de abajo hacia arriba); si no, a la izquierda.
-    let valor: string | null = null;
     for (const horario of [true, false]) {
       const leido = (await reconocer(girar90(recorte, horario))).map((c) => c.texto).join(" ");
       const m = leido.match(/(\d{1,4})\s*k\s*w/i) ?? leido.match(/\b(\d{2,4})\b/);
-      if (m) {
-        valor = m[1];
-        break;
-      }
+      if (m) return Number(m[1]);
     }
-    if (valor === null) return null; // si falta una columna, los meses quedarían corridos
-    textos.push(`${valor} kWh`);
-  }
-  return textos.join("  ");
+    return null;
+  };
+
+  const valores: (number | null)[] = [];
+  for (const r of meses) valores.push(await leerColumna(r));
+  if (valores.filter((v) => v !== null).length < 2) return null;
+  return { meses: meses.map((r) => r.texto.toUpperCase()), valores, actual: await leerColumna(act) };
 }
