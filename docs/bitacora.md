@@ -120,3 +120,4 @@
 | 28/09 | No guardar fotos ni datos personales | Los usuarios son menores de edad; no se necesitan |
 | 28/09 | Funciones de seguridad en el esquema `privado` | El asesor de Supabase advirtió que se podían llamar desde la API |
 | 28/09 | Si el periodo no se lee, se estima con la fecha de emisión; si los días no se leen, se asumen 30. Ambos se marcan y se avisa | El mes casi siempre se puede deducir. Asumir 30 días es neutro: normalizar a 30 días no cambia el consumo, mientras que un número mal leído (21) sí lo alteraría |
+| 28/09 | Colores inspirados en la factura de Energía de Pereira; escudo RMB y logo del Club de Ciencias en el ingreso y en Inicio | Identidad del proyecto. Los colores de texto se oscurecieron hasta pasar el contraste AA (≥ 4,5:1); el naranja vivo de la marca solo se usa como decoración. Aviso de que no es un servicio de la empresa |

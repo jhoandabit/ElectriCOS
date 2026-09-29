@@ -14,6 +14,10 @@ El consumo entra de dos formas, que terminan en el mismo modelo de datos y el mi
 - **Factura**: PDF de la empresa, foto con cámara o de la galería. Se lee dentro del celular (texto del PDF o PaddleOCR), siempre validada y confirmada por la persona. Ninguna imagen sale del dispositivo.
 - **Manual**: lecturas del medidor o consumo en kWh.
 
+## Identidad
+
+Proyecto del **Club de Ciencias RMB Conciencia** de la I. E. Ramón Martínez Benítez (escudo y logo en `public/marca/`). Los colores (naranja, azul y verde) se inspiran en la factura de Energía de Pereira y están definidos una sola vez en `app/globals.css` (`:root`), con contraste de texto verificado. ElectriCOs es un proyecto escolar y no pertenece a esa empresa.
+
 ## Objetivo
 
 Que las familias comprendan su consumo con datos reales y oficiales, y que los estudiantes de 9.º a 11.º puedan explicar, modificar y defender cómo está construida la plataforma.

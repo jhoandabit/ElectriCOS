@@ -1,15 +1,23 @@
 :root {
-  --bg: #f4f7f4;
+  /* Paleta inspirada en los colores de la factura de Energía de Pereira
+     (naranja, azul y verde) + los del escudo de la I. E. Ramón Martínez
+     Benítez. Contraste de texto verificado (WCAG AA ≥ 4,5:1 sobre blanco). */
+  --bg: #f7f5f2;
   --surface: #ffffff;
-  --soft: #eef7f0;
-  --fg: #17351f;
-  --muted: #66766c;
-  --accent: #1f7a45;
-  --dark: #155c33;
-  --border: #d9e4dc;
+  --soft: #fff2e8;        /* naranja muy claro: fondos de tarjetas */
+  --fg: #1f2b38;          /* gris azulado oscuro: texto principal (14,4:1) */
+  --muted: #5b6673;       /* texto secundario (5,8:1) */
+  --accent: #b84c08;      /* naranja: botones y acentos (5,2:1) */
+  --accent-vivo: #e0620e; /* naranja de la marca: solo decoración */
+  --dark: #8f3b06;        /* naranja oscuro: títulos (7,5:1) */
+  --azul: #1f63a5;        /* azul: información (6,2:1) */
+  --verde: #4e6b0e;       /* verde: dato comprobado (6,1:1) */
+  --verde-vivo: #80a028;
+  --verde-suave: #f2f7e6;
+  --border: #e8ddd2;
   --danger: #b42318;
   --danger-bg: #fff0ee;
-  --shadow: 0 14px 38px rgba(23, 53, 31, 0.08);
+  --shadow: 0 14px 38px rgba(31, 43, 56, 0.08);
 }
 
 * {
@@ -170,7 +178,7 @@ button:disabled {
   gap: 12px;
   text-align: left;
   cursor: pointer;
-  box-shadow: 0 7px 22px rgba(23, 53, 31, 0.045);
+  box-shadow: 0 7px 22px rgba(31, 43, 56, 0.045);
 }
 
 .action-card:active {
@@ -194,7 +202,7 @@ button:disabled {
 
 .action-card b {
   font-size: 25px;
-  color: #7b8a80;
+  color: #6f7883;
 }
 
 .action-icon {
@@ -259,10 +267,10 @@ button:disabled {
 .form-section select {
   width: 100%;
   min-height: 48px;
-  border: 1px solid #cfdcd3;
+  border: 1px solid #e3d6ca;
   border-radius: 14px;
   padding: 0 13px;
-  background: #fbfdfb;
+  background: #fdfbf9;
   color: var(--fg);
   outline: none;
 }
@@ -270,11 +278,11 @@ button:disabled {
 .form-section input:focus,
 .form-section select:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(31, 122, 69, 0.11);
+  box-shadow: 0 0 0 3px rgba(184, 76, 8, 0.11);
 }
 
 .form-section input:disabled {
-  background: #edf5ef;
+  background: #f4efe9;
   color: var(--dark);
   font-weight: 700;
 }
@@ -342,8 +350,8 @@ button:disabled {
   display: flex;
   align-items: center;
   gap: 14px;
-  background: #effaf2;
-  border-color: #c9e7d1;
+  background: var(--verde-suave);
+  border-color: #d6e6b3;
 }
 
 .success-icon {
@@ -352,8 +360,8 @@ button:disabled {
   display: grid;
   place-items: center;
   border-radius: 50%;
-  background: #d9f1df;
-  color: #176b3b;
+  background: #e4efc9;
+  color: #a94608;
   font-size: 23px;
   font-weight: 900;
 }
@@ -424,7 +432,7 @@ button:disabled {
   border: 1px solid var(--border);
   border-bottom: 0;
   border-radius: 20px 20px 0 0;
-  box-shadow: 0 -8px 25px rgba(23, 53, 31, 0.08);
+  box-shadow: 0 -8px 25px rgba(31, 43, 56, 0.08);
   backdrop-filter: blur(16px);
 }
 
@@ -432,7 +440,7 @@ button:disabled {
   min-height: 52px;
   border: 0;
   background: transparent;
-  color: #77857c;
+  color: #6b7580;
   display: grid;
   place-items: center;
   gap: 3px;
@@ -465,7 +473,7 @@ button:disabled {
 
 .camera-dropzone {
   min-height: 150px;
-  border: 1.5px dashed #a9c4b0;
+  border: 1.5px dashed #e2b48f;
   border-radius: 18px;
   background: var(--soft);
   display: grid;
@@ -498,7 +506,7 @@ button:disabled {
   border-radius: 16px;
   overflow: hidden;
   border: 1px solid var(--border);
-  background: #f7f9f7;
+  background: #faf7f4;
   max-height: 420px;
   text-align: center;
 }
@@ -524,7 +532,7 @@ button:disabled {
   border: 1px solid var(--border);
   border-radius: 13px;
   padding: 10px;
-  background: #fbfdfb;
+  background: #fdfbf9;
 }
 
 .ocr-details summary {
@@ -579,10 +587,10 @@ button:disabled {
 
 /* Resultado estructurado del OCR */
 .detected-card {
-  border: 1px solid #cfe1d4;
+  border: 1px solid #eadfd3;
   border-radius: 18px;
   padding: 16px;
-  background: #fbfefc;
+  background: #fffdfb;
   display: grid;
   gap: 14px;
 }
@@ -649,7 +657,8 @@ button:disabled {
 }
 
 .detected-ok {
-  border-color: #cfe4d5;
+  border-color: #cfe0a8;
+  background: var(--verde-suave);
 }
 
 .detected-missing {
@@ -668,7 +677,7 @@ button:disabled {
   align-items: flex-start;
   padding: 11px 12px;
   border-radius: 13px;
-  background: #f3f7f4;
+  background: #f8f4f0;
   color: var(--muted);
   font-size: 12px;
   line-height: 1.45;
@@ -693,7 +702,7 @@ button:disabled {
   width: 17px;
   height: 17px;
   flex: 0 0 17px;
-  border: 2px solid #b9d1c0;
+  border: 2px solid #e3cdb9;
   border-top-color: var(--accent);
   border-radius: 50%;
   animation: ocr-spin 0.8s linear infinite;
@@ -725,7 +734,7 @@ button:disabled {
   padding: 14px;
   border: 1px solid var(--border);
   border-radius: 16px;
-  background: #fbfdfb;
+  background: #fdfbf9;
 }
 
 .pdf-icon {
@@ -917,7 +926,7 @@ button:disabled {
 .selector-marco {
   position: absolute;
   border: 3px solid var(--accent);
-  background: rgba(31, 122, 69, 0.15);
+  background: rgba(184, 76, 8, 0.15);
   box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.25);
   border-radius: 4px;
   pointer-events: none;
@@ -993,7 +1002,7 @@ button:disabled {
 .segmented button.on {
   background: var(--surface);
   color: var(--fg);
-  box-shadow: 0 2px 8px rgba(23, 53, 31, 0.1);
+  box-shadow: 0 2px 8px rgba(31, 43, 56, 0.1);
 }
 
 /* Casillas de verificación en una fila */
@@ -1093,7 +1102,7 @@ button:disabled {
   justify-items: center;
   gap: 6px;
   padding: 16px 8px;
-  border: 1.5px dashed #b9d3c1;
+  border: 1.5px dashed #e2c2a6;
   border-radius: 16px;
   background: var(--soft);
   cursor: pointer;
@@ -1186,21 +1195,21 @@ button:disabled {
 }
 
 .g-col {
-  fill: var(--accent);
+  fill: var(--azul);
 }
 
 .g-col.activa {
-  fill: var(--dark);
+  fill: #164a7c;
 }
 
 .g-ref-base {
-  stroke: #8a978f;
+  stroke: #8a929b;
   stroke-width: 2;
   stroke-linecap: round;
 }
 
 .g-ref-meta {
-  stroke: #a36b00;
+  stroke: var(--verde-vivo);
   stroke-width: 2;
   stroke-linecap: round;
 }
@@ -1316,7 +1325,7 @@ button:disabled {
 .dato h3 span { margin-right: 4px; }
 .dato-valor { font-size: 26px; letter-spacing: -0.02em; color: var(--fg); line-height: 1.15; }
 .dato-sub { margin: -2px 0 2px; color: var(--muted); font-size: 14px; font-weight: 600; }
-.dato p { margin: 0; font-size: 14px; line-height: 1.5; color: #33473a; }
+.dato p { margin: 0; font-size: 14px; line-height: 1.5; color: #3a4654; }
 .dato .cuenta {
   padding: 8px 10px;
   border-radius: 10px;
@@ -1329,10 +1338,33 @@ button:disabled {
 .barra-fila b { text-align: right; }
 .barra { height: 14px; border-radius: 7px; background: var(--surface); overflow: hidden; border: 1px solid var(--border); }
 .barra i { display: block; height: 100%; border-radius: 7px; }
-.barra-basico { background: #8fbf9f; }
-.barra-casa { background: var(--accent); }
-.barra-casa.encima { background: #d98b19; }
+.barra-basico { background: var(--verde-vivo); }
+.barra-casa { background: var(--azul); }
+.barra-casa.encima { background: var(--accent-vivo); }
 .historico-factura { margin-top: 4px; }
 .historico-factura table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 6px; }
 .historico-factura th, .historico-factura td { padding: 5px 6px; border-bottom: 1px solid var(--border); text-align: left; }
 .historico-factura td:nth-child(n + 2), .historico-factura th:nth-child(n + 2) { text-align: right; }
+
+/* ---------- Marca: escudo RMB y Club de Ciencias RMB Conciencia ---------- */
+.app-shell::before {
+  content: "";
+  display: block;
+  height: 5px;
+  background: linear-gradient(90deg, var(--accent-vivo) 0%, #f2a33a 45%, var(--verde-vivo) 75%, var(--azul) 100%);
+}
+.logos { display: flex; align-items: flex-end; justify-content: center; gap: 18px; }
+.logos img { display: block; object-fit: contain; }
+.hero-card .logos { justify-content: flex-start; margin-bottom: 14px; }
+.creditos {
+  margin-top: 22px;
+  padding: 18px 16px;
+  border-radius: 20px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  text-align: center;
+  display: grid;
+  gap: 8px;
+}
+.creditos p { margin: 0; font-size: 13.5px; line-height: 1.5; color: var(--fg); }
+.creditos small { color: var(--muted); font-size: 11.5px; line-height: 1.4; }

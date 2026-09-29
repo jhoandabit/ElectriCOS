@@ -2,6 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import { supabase } from "../lib/supabase/cliente";
+import Creditos, { Logos } from "./Creditos";
 import Pantalla from "./Pantalla";
 
 // Autenticación = "¿quién eres?". Supabase Auth guarda las contraseñas
@@ -63,6 +64,7 @@ export default function AuthScreen() {
   return (
     <Pantalla titulo="ElectriCOs" antetitulo="EDUCACIÓN ENERGÉTICA">
       <div className="hero-card">
+        <Logos alto={84} />
         <span className="section-kicker">TU HOGAR</span>
         <h2>Mide, comprende y transforma tu consumo.</h2>
         <p>{modo === "ingresar" ? "Ingresa para ver el consumo de tu hogar." : "Crea tu cuenta para empezar a registrar."}</p>
@@ -114,6 +116,8 @@ export default function AuthScreen() {
         <strong>Tus datos</strong>
         <span>Solo guardamos el consumo de energía de tu hogar: nada de nombres completos, direcciones ni fotos de facturas. Solo tú y tu docente pueden verlo.</span>
       </div>
+
+      <Creditos />
     </Pantalla>
   );
 }
