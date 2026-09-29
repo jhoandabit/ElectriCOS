@@ -305,6 +305,9 @@ export async function leerGraficoDeBarras(
     };
     for (const [i, [lienzo, horario]] of intentos.entries()) {
       await probar(lienzo, horario);
+      // Rapidez: si el primer intento ya leyó "NNN kWh" (3 o 4 dígitos) se
+      // acepta; el error típico es PERDER un dígito, que deja 1 o 2.
+      if (i === 0 && conKwh.length === 1 && conKwh[0] >= 100) return conKwh[0];
       // Los dos primeros intentos coinciden: no hace falta el tercero.
       if (i === 1 && conKwh.length === 2 && conKwh[0] === conKwh[1]) return conKwh[0];
     }
