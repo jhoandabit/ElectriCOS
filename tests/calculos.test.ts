@@ -10,6 +10,7 @@ import {
   huellaKg,
   huellaPorPersona,
   kwhMesNormalizado,
+  metaConLineaBase,
 } from "../app/lib/calculos/motor";
 import { FACTOR_EMISION_SIN, sobre1000Metros } from "../app/lib/calculos/parametros";
 
@@ -87,4 +88,12 @@ test("subsistencia: referencia por altitud", () => {
   assert.equal(sobre1000Metros("Pereira"), true);
   assert.equal(sobre1000Metros("Ciudad inventada"), null);
   assert.deepEqual(comparacionSubsistencia(353, false), { referencia: 173, diferencia: 180, porEncima: true });
+});
+
+test("la meta pierde su línea base si se borran sus meses", () => {
+  const seis = ["2026-04", "2026-05", "2026-06", "2026-07", "2026-08", "2026-09"];
+  assert.equal(metaConLineaBase(seis, "2026-04", "2026-09"), true);
+  assert.equal(metaConLineaBase(["2026-08", "2026-09"], "2026-04", "2026-09"), false); // quedan 2
+  assert.equal(metaConLineaBase([], "2026-04", "2026-09"), false); // se borró todo
+  assert.equal(metaConLineaBase(["2026-10", "2026-11", "2026-12"], "2026-04", "2026-09"), false); // meses nuevos no cuentan
 });

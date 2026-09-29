@@ -175,3 +175,13 @@ export function comparacionSubsistencia(kwhMes: number, sobre1000: boolean, bajo
   const referencia = sobre1000 ? sobre1000Kwh : bajo1000Kwh;
   return { referencia, diferencia: redondear(kwhMes - referencia), porEncima: kwhMes > referencia };
 }
+
+/**
+ * ¿La meta todavía tiene su línea base? Cuenta cuántos de los meses que
+ * formaron la línea base (desde–hasta, AAAA-MM) siguen registrados. Si se
+ * borraron y quedan menos de 3, la meta ya no tiene contra qué compararse.
+ */
+export function metaConLineaBase(periodos: string[], desde: string, hasta: string): boolean {
+  const quedan = new Set(periodos.filter((p) => p >= desde && p <= hasta)).size;
+  return quedan >= MESES_MINIMOS_LINEA_BASE;
+}

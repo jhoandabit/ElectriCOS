@@ -19,7 +19,9 @@ import ProgresoScreen from "./components/ProgresoScreen";
 import { PARAMETROS_POR_DEFECTO, type Parametro } from "./lib/calculos/parametros";
 import type { ResultadoLectura } from "./lib/factura/tipos";
 import { supabase, supabaseConfigurado } from "./lib/supabase/cliente";
+import { metaConLineaBase } from "./lib/calculos/motor";
 import {
+  cerrarMeta,
   listarRegistros,
   obtenerHogar,
   obtenerMetaActiva,
@@ -42,6 +44,7 @@ export default function App() {
   const [vista, setVista] = useState<Vista>("inicio");
   const [lectura, setLectura] = useState<{ resultado: ResultadoLectura; metodo: MetodoLectura } | null>(null);
   const [error, setError] = useState("");
+  const [aviso, setAviso] = useState("");
 
   // ---------- Sesión ----------
   useEffect(() => {
@@ -56,6 +59,18 @@ export default function App() {
   const cargarDatos = useCallback(async (h: Hogar) => {
     const [r, m] = await Promise.all([listarRegistros(h.id), obtenerMetaActiva(h.id)]);
     setRegistros(r);
+    // Si se borraron los meses de su línea base, la meta ya no tiene contra
+    // qué compararse: se cierra (queda guardada como "cerrada", no se borra).
+    if (m && !metaConLineaBase(r.map((x) => x.periodo), m.linea_base.desde, m.linea_base.hasta)) {
+      try {
+        await cerrarMeta(m.id, "cerrada");
+        setMeta(null);
+        setAviso("La meta se cerró porque se borraron los meses de su línea base. Cuando registres de nuevo tus facturas podrás proponer otra.");
+      } catch {
+        setMeta(m);
+      }
+      return;
+    }
     setMeta(m);
   }, []);
 
@@ -224,6 +239,13 @@ export default function App() {
           pie={nav}
         >
           {errorGlobal}
+          {aviso && (
+            <div className="info-note" role="status">
+              <strong>Meta cerrada</strong>
+              <span>{aviso}</span>
+              <button className="text-button" onClick={() => setAviso("")}>Entendido</button>
+            </div>
+          )}
           <HomeScreen
             hogar={hogar}
             registros={registros}
