@@ -152,12 +152,22 @@ export async function leerTextoVertical(imagen: HTMLCanvasElement, cajas: CajaTe
   const paso = pasos[Math.floor(pasos.length / 2)];
   if (!(paso > 10)) return null;
 
+  // Cajas horizontales (textos normales) para no meter en el recorte, por
+  // ejemplo, el "Promedio últimos 6 meses: 275 kWh" que está encima del gráfico.
+  const horizontales = cajas.map((c) => {
+    const xs = c.poligono.map((p) => p[0]);
+    const ys = c.poligono.map((p) => p[1]);
+    return { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) };
+  }).filter((c) => c.x1 - c.x0 > (c.y1 - c.y0) * 2);
+
   const textos: string[] = [];
   for (const r of fila) {
-    const sx = Math.max(0, Math.round(r.cx - paso * 0.45));
-    const sw = Math.min(imagen.width - sx, Math.round(paso * 0.9));
-    const alto = Math.round(paso * 2.4); // la zona de las barras, encima del rótulo
-    const sy = Math.max(0, Math.round(r.y0 - alto));
+    const sx = Math.max(0, Math.round(r.cx - paso * 0.3));
+    const sw = Math.min(imagen.width - sx, Math.round(paso * 0.6));
+    let sy = Math.max(0, Math.round(r.y0 - paso * 2.4)); // la zona de las barras, encima del rótulo
+    for (const h of horizontales) {
+      if (h.x1 > sx && h.x0 < sx + sw && h.y1 < r.y0 - 8 && h.y1 + 2 > sy) sy = Math.round(h.y1 + 2);
+    }
     const sh = Math.round(r.y0 - 2 - sy);
     if (sw < 8 || sh < 8) return null;
     const factor = Math.min(3, Math.max(1, 48 / sw));
@@ -169,10 +179,11 @@ export async function leerTextoVertical(imagen: HTMLCanvasElement, cajas: CajaTe
     ctx.imageSmoothingQuality = "high";
     ctx.drawImage(imagen, sx, sy, sw, sh, 0, 0, recorte.width, recorte.height);
 
+    // Primero girando a la derecha (texto escrito de abajo hacia arriba); si no, a la izquierda.
     let valor: string | null = null;
-    for (const horario of [false, true]) {
+    for (const horario of [true, false]) {
       const leido = (await reconocer(girar90(recorte, horario))).map((c) => c.texto).join(" ");
-      const m = leido.match(/(\d{1,4})\s*k?w\s*h/i) ?? leido.match(/\b(\d{2,4})\b/);
+      const m = leido.match(/(\d{1,4})\s*k\s*w/i) ?? leido.match(/\b(\d{2,4})\b/);
       if (m) {
         valor = m[1];
         break;
