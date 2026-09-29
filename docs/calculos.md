@@ -21,11 +21,12 @@ Energía de Pereira · Cartago · estrato 4 · 4 personas · periodo 14 ago – 
 
 | Parámetro | Valor | Fuente |
 |---|---|---|
-| Factor de emisión del SIN (inventarios / consumo) | 0,220 kg CO₂e/kWh (2024) | [UPME, Factores de emisión del SIN 2024](https://docs.upme.gov.co/Normatividad/Soporte_calculo_Factor_de_Emision_2024.pdf) |
+| Factor de emisión del SIN (inventarios / consumo) | 0,220 kg CO₂e/kWh (2024) | [UPME, Resolución 000085 de 2026, art. 1](https://docs.upme.gov.co/Normatividad/085_2026.pdf) ([cálculo](https://docs.upme.gov.co/Normatividad/Soporte_calculo_Factor_de_Emision_2024.pdf)) |
 | Subsistencia < 1000 m s. n. m. | 173 kWh/mes | [Resolución UPME 355 de 2004, art. 1](https://gestornormativo.creg.gov.co/gestor/entorno/docs/resolucion_upme_0355_2004.htm) |
 | Subsistencia ≥ 1000 m s. n. m. | 130 kWh/mes | Ídem |
 
-- **No usar los factores "MDL" (≈ 0,6).** Son del margen combinado para proyectos de reducción de emisiones, no para la huella de un consumo.
+- **No usar los factores "MDL"** de la misma resolución (0,660 eólica y solar; 0,607 y 0,554 otros proyectos). Son del margen combinado para proyectos de reducción de emisiones, no para la huella de un consumo.
+- La UPME publica el factor de cada año con retraso: el de 2024 se oficializó en 2026. Valores preliminares de años posteriores (se ha mencionado 0,097) no se usan hasta que sean oficiales.
 - El factor cambia cada año (2024 fue un año seco, con más generación térmica). Para actualizarlo: una fila nueva en `energy_parameters` y el valor en `parametros.ts`.
 - **La subsistencia no es un límite ni una meta:** es el consumo que la regulación reconoce como básico para subsidiar a los estratos 1, 2 y 3.
 

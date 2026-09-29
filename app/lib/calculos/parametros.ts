@@ -15,16 +15,20 @@ export type Parametro = {
  * Factor de emisión del Sistema Interconectado Nacional (SIN) para
  * inventarios de GEI / consumo de energía eléctrica, año 2024.
  * 0,220 tCO2e/MWh = 0,220 kg CO2e/kWh.
- * OJO: no usar los factores "MDL" (margen combinado, ~0,6): esos son para
- * proyectos de reducción de emisiones, no para estimar la huella de un consumo.
+ * Es el último factor OFICIAL para inventarios (Res. UPME 000085 de 2026).
+ * La UPME publica cada año con retraso: el de 2025/2026 llegará después.
+ * Valores preliminares (p. ej. 0,097) no se usan hasta que sean oficiales.
+ * OJO: no usar los factores "MDL" (0,660 eólica/solar; 0,607 y 0,554 otros
+ * proyectos, misma resolución): son para proyectos de reducción de
+ * emisiones, no para estimar la huella de un consumo.
  */
 export const FACTOR_EMISION_SIN: Parametro = {
   clave: "factor_emision_sin",
   valor: 0.22,
   unidad: "kg CO2e/kWh",
   vigencia: 2024,
-  fuente: "UPME · Factores de emisión del SIN para el año 2024",
-  url: "https://docs.upme.gov.co/Normatividad/Soporte_calculo_Factor_de_Emision_2024.pdf",
+  fuente: "UPME · Resolución 000085 de 2026, art. 1: factor del SIN 2024 para inventarios de GEI",
+  url: "https://docs.upme.gov.co/Normatividad/085_2026.pdf",
 };
 
 /** Consumo de subsistencia (referencia para subsidios, NO un máximo ni una meta). */
