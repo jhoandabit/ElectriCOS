@@ -172,7 +172,7 @@ export default function App() {
             onHogar={setHogar}
             onTerminar={() => {
               setLectura(null);
-              ir("consumo");
+              ir("inicio");
             }}
           />
         </Pantalla>
@@ -191,9 +191,7 @@ export default function App() {
         <Pantalla titulo="Consumo" icono="▣" pie={nav}>
           {errorGlobal}
           <ConsumoScreen
-            hogar={hogar}
             registros={registros}
-            parametros={parametros}
             onFactura={() => { setLectura(null); ir("factura"); }}
             onManual={() => { setLectura(null); ir("formulario"); }}
             onCambio={recargar}

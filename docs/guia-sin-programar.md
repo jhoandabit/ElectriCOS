@@ -158,7 +158,7 @@ La contraseña no la ve nadie, ni siquiera la docente. Se guarda "cifrada" (conv
 
 ## 3.3 Registrar el consumo: tres caminos
 
-En la pestaña **Consumo** aparecen dos botones: **Leer factura** e **Ingresar manualmente**. (Inicio solo muestra un resumen.)
+En la pestaña **Consumo** aparecen dos botones: **Leer factura** e **Ingresar manualmente**, y debajo el historial de meses.
 
 **Camino A — PDF de la factura (el más preciso).** Botón **PDF** y elegir el archivo que envía la empresa. Tarda un segundo y casi nunca se equivoca, porque el PDF ya trae el texto escrito.
 
@@ -187,7 +187,7 @@ Si la app no encuentra el consumo en una foto, ofrece la **lectura guiada**: con
 
 ## 3.5 El resultado del mes
 
-Al guardar, y siempre en la pestaña **Consumo** (con "Ver el mes" se elige cualquier mes), ElectriCOs muestra seis tarjetas pequeñas. Cada una responde **una pregunta** con un número grande. Al **tocarla** se amplía y muestra qué significa y la cuenta que lo produjo; con mouse, al pasar por encima crece un poco para invitar a tocarla:
+Al guardar, y siempre en **Inicio** (con el último mes registrado), ElectriCOs muestra seis tarjetas pequeñas. Cada una responde **una pregunta** con un número grande. Al **tocarla** se amplía y muestra qué significa y la cuenta que lo produjo; con mouse, al pasar por encima crece un poco para invitar a tocarla:
 
 | Tarjeta | Ejemplo (factura de referencia) | Qué explica |
 |---|---|---|
@@ -210,7 +210,7 @@ Con **3 meses o más** registrados, en la pestaña **Meta**:
 
 En **Progreso**, un gráfico de columnas muestra cada mes frente a la meta, y cuánta energía, CO₂ y dinero se ha ahorrado.
 
-La barra de abajo tiene cuatro secciones: **Inicio** (resumen), **Consumo** (registrar, tarjetas del mes e historial), **Meta** y **Progreso**.
+La barra de abajo tiene cuatro secciones: **Inicio** (tarjetas del último mes), **Consumo** (registrar e historial), **Meta** y **Progreso**.
 
 ::: {.ejercicio}
 **Compruebo lo que aprendí (capítulo 3)**
