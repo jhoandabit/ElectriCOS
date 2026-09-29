@@ -59,10 +59,12 @@ function rangoFechas(t: string): Partial<DatosEstructura> | null {
   const [inicio] = fechasEnTexto(m[1]);
   const [fin] = fechasEnTexto(m[2]);
   if (!inicio || !fin || !(fin > inicio) || diasEntre(inicio, fin) > 75) return null;
-  const dias = m[3] ? Number(m[3]) : diasEntre(inicio, fin);
+  // Solo devolvemos los días si están escritos junto al rango. Si no, los
+  // calcula extraer-texto.ts (contando ambos extremos, como la empresa).
+  const dias = m[3] ? Number(m[3]) : null;
   return {
     periodo: periodoDesdeRango(inicio, fin) ?? undefined,
-    diasFacturados: dias >= 15 && dias <= 75 ? dias : diasEntre(inicio, fin),
+    diasFacturados: dias !== null && dias >= 15 && dias <= 75 ? dias : undefined,
   };
 }
 

@@ -36,6 +36,19 @@ function primerNumeroTras(texto: string, etiqueta: RegExp, ventana = 60): number
   return m ? parseNumeroCO(m[m.length - 1]) : null;
 }
 
+/**
+ * Si el texto contiene un municipio conocido, devuelve su nombre bien escrito.
+ * Corrige lecturas como "Cartago Serviclo" (OCR que pegó la palabra siguiente).
+ */
+export function municipioConocido(candidato: string | null): string | null {
+  if (!candidato) return null;
+  const c = normalizarTexto(candidato);
+  const conocido = [...MUNICIPIOS_CONOCIDOS]
+    .sort((a, b) => b.length - a.length)
+    .find((m) => new RegExp(`(^|\\s)${normalizarTexto(m)}($|\\s)`).test(c));
+  return conocido ?? candidato;
+}
+
 function buscarMunicipio(t: string): string | null {
   const m = t.match(/municipio\s*[:.\-]?\s*(?:de\s+)?(?:\d{1,5}\s*[-.]?\s*)?([a-z][a-z .]{2,30}?)(?=\s{2,}|\s*[-,:/(]|\s+(?:depto|departamento|ciclo|estrato|servicio|barrio|ruta|valle|risaralda|caldas)|\n|$)/);
   if (m) {
@@ -88,7 +101,7 @@ function buscarPeriodo(t: string): { periodo: string | null; dias: number | null
     const zona = t.slice(etiqueta, etiqueta + 140);
     const fechas = fechasEnTexto(zona);
     if (fechas.length >= 2) {
-      return { periodo: periodoDesdeRango(fechas[0], fechas[1]), dias: diasEntre(fechas[0], fechas[1]) };
+      return { periodo: periodoDesdeRango(fechas[0], fechas[1]), dias: diasEntre(fechas[0], fechas[1]) + 1 };
     }
     const directo = normalizarPeriodo(zona.replace(/^per[i1]odo\s*(?:facturado|de\s*facturacion|de\s*consumo|consumo)?\s*[:.]?/, ""));
     if (directo) return { periodo: directo, dias: null };
@@ -106,7 +119,7 @@ function buscarPeriodo(t: string): { periodo: string | null; dias: number | null
   if (rango) {
     const [a] = fechasEnTexto(rango[1]);
     const [b] = fechasEnTexto(rango[2]);
-    if (a && b) return { periodo: periodoDesdeRango(a, b), dias: diasEntre(a, b) };
+    if (a && b) return { periodo: periodoDesdeRango(a, b), dias: diasEntre(a, b) + 1 };
   }
 
   return { periodo: null, dias: null };
@@ -242,6 +255,7 @@ export function extraerDeTexto(textoOriginal: string): DatosFactura {
   if (e.periodo) datos.periodo = e.periodo;
   if (e.diasFacturados) datos.diasFacturados = e.diasFacturados;
   if (e.municipio) datos.municipio = e.municipio;
+  datos.municipio = municipioConocido(datos.municipio);
   if (e.estrato && datos.estrato === null) datos.estrato = e.estrato;
   if (e.valorKwh) datos.valorKwh = e.valorKwh;
   if (e.totalPagar) datos.totalPagar = e.totalPagar;

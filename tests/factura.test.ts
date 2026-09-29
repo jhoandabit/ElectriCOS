@@ -3,7 +3,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { extraerDeTexto } from "../app/lib/factura/extraer-texto";
+import { extraerDeTexto, municipioConocido } from "../app/lib/factura/extraer-texto";
+import { agruparEnRenglones } from "../app/lib/factura/ocr-paddle";
 import { lecturasDesdeLineas } from "../app/lib/factura/estructura";
 import { parseNumeroCO } from "../app/lib/factura/texto";
 import { consumoPorLecturas, validarYCompletar } from "../app/lib/factura/validar";
@@ -67,4 +68,42 @@ test("medidor que dio la vuelta", () => {
   // Lecturas al revés no son una vuelta del medidor (error encontrado al probar la interfaz)
   assert.equal(consumoPorLecturas({ lecturaAnterior: 500, lecturaActual: 400, factorMultiplicador: 1 }), null);
   assert.equal(consumoPorLecturas({ lecturaAnterior: 19840, lecturaActual: 19487, factorMultiplicador: 1 }), null);
+});
+
+test("municipio: corrige palabras pegadas por el OCR", () => {
+  assert.equal(municipioConocido("Cartago Serviclo"), "Cartago");
+  assert.equal(municipioConocido("Santa Rosa de Cabal"), "Santa Rosa de Cabal");
+  assert.equal(municipioConocido("Pueblo Inventado"), "Pueblo Inventado");
+});
+
+test("días del periodo: se cuentan ambos extremos si no están escritos", () => {
+  const d = extraerDeTexto("Periodo facturado: 14/AGO/2026 - 10/SEP/2026\nConsumo 353 kWh");
+  assert.equal(d.diasFacturados, 28);
+  assert.equal(d.periodo, "2026-09");
+});
+
+test("OCR de foto torcida: los renglones no se parten", () => {
+  // Cajas como las entrega PaddleOCR en una foto inclinada 1,5°: la fila
+  // "Activa" baja unos píxeles de izquierda a derecha.
+  const caja = (texto: string, x: number, y: number, ancho: number) => ({
+    texto,
+    confianza: 0.99,
+    poligono: [[x, y], [x + ancho, y + 1], [x + ancho, y + 21], [x, y + 20]] as [number, number][],
+  });
+  const renglones = agruparEnRenglones([
+    caja("Activa", 20, 100, 60),
+    caja("1408001303 GNS", 110, 102, 150),
+    caja("19840", 290, 105, 60),
+    caja("19487", 380, 108, 60),
+    caja("353", 470, 111, 35),
+    caja("1", 530, 113, 10),
+    caja("353", 560, 115, 35),
+    caja("267", 640, 118, 35),
+    caja("Reactiva", 20, 130, 70),
+  ]);
+  assert.equal(renglones[0], "Activa  1408001303 GNS  19840  19487  353  1  353  267");
+  assert.equal(renglones[1], "Reactiva");
+  const d = extraerDeTexto(renglones.join("\n"));
+  assert.equal(d.consumoKwh, 353);
+  assert.equal(d.lecturaActual, 19840);
 });

@@ -39,7 +39,7 @@ Porque la meta se definió contra **esa** línea base. Si después se agregan o 
 
 ## ¿Por qué `invoices` guarda lo extraído y lo confirmado?
 
-Para evaluar el lector (guía, módulo 12): comparando ambos se sabe cuántas veces la IA o el OCR acertaron, y en qué campos se equivocan.
+Para evaluar el lector (guía, módulo 12): comparando ambos se sabe cuántas veces el lector (texto del PDF, PaddleOCR o lectura guiada) acertó, y en qué campos se equivocan.
 
 ```sql
 -- ¿Cuántas lecturas corrigieron las personas, por método?

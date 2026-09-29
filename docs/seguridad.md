@@ -34,7 +34,6 @@ where id = (select id from auth.users where email = 'correo.del.docente@iermb.ed
 | Elemento | Dónde vive | ¿Puede ir en el navegador? |
 |---|---|---|
 | `NEXT_PUBLIC_SUPABASE_URL` y `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Vercel | Sí: son públicas por diseño. RLS protege los datos |
-| `GEMINI_API_KEY` | Vercel, tipo "Sensitive" | **No.** Solo la usan `app/api/*` en el servidor |
 | `service_role` de Supabase | Solo en el panel de Supabase | **Nunca.** Salta todas las reglas RLS |
 
 `.gitignore` excluye `.env*` para que ninguna clave llegue a GitHub.
@@ -50,7 +49,7 @@ where id = (select id from auth.users where email = 'correo.del.docente@iermb.ed
 | La docente modifica datos | Tiene acceso de lectura | Sin políticas de update para docente | T10 → 0 filas |
 | Alguien sin sesión lee hogares | API pública | `revoke all ... from anon` | T11 → rechazado |
 | Llamar funciones internas por la API | Funciones `security definer` en `public` | Movidas al esquema `privado` | Asesor de Supabase sin avisos |
-| Filtrar datos personales a la IA | La factura trae nombre y dirección | Se pide a la IA no devolverlos y no se guardan; las recomendaciones reciben solo números | Revisar `datos_extraidos` en `invoices` |
+| Filtrar datos personales de la factura | La foto trae nombre y dirección | La foto se lee dentro del celular y no se envía a ningún servidor; solo se guardan datos de consumo | Revisar `datos_extraidos` en `invoices` |
 
 Cómo repetir las pruebas: [pruebas.md](pruebas.md).
 
@@ -58,4 +57,4 @@ Cómo repetir las pruebas: [pruebas.md](pruebas.md).
 
 - No se guardan nombres completos, direcciones, matrículas ni fotos de facturas.
 - El "nombre del hogar" pide explícitamente no usar direcciones ni apellidos.
-- La factura se procesa y se descarta. Con Gemini **gratuito**, Google puede usar lo enviado para mejorar sus productos: para uso con familias conviene la versión de pago o la lectura sin IA.
+- La factura se lee dentro del celular (PDF.js y PaddleOCR) y se descarta: ninguna imagen viaja a servidores externos.

@@ -45,7 +45,7 @@
 | Campo | Respuesta |
 |---|---|
 | Mensaje exacto | `AI Gateway requires a valid credit card on file to service requests.` |
-| Decisión | No registrar tarjeta en un proyecto escolar. Gemini queda como proveedor principal (`IA_PROVEEDOR=gemini`) |
+| Decisión | No registrar tarjeta en un proyecto escolar |
 | Aprendizaje | "Gratis" a veces exige una tarjeta. Leer las condiciones antes de elegir un servicio |
 
 ### E05 · Probar antes de que el cambio esté publicado (28 sep)
@@ -76,6 +76,26 @@
 | Solución | Solo es vuelta si la anterior está cerca del máximo (≥ 90 %) y la actual cerca de cero (≤ 10 %) |
 | Aprendizaje | Probar también con datos equivocados, no solo con los que funcionan |
 
+### E08 · La segunda clave de Gemini tampoco funcionó; se retira la IA en la nube (28 sep)
+
+| Campo | Respuesta |
+|---|---|
+| Error observado | Las fotos no se leían; el PDF sí |
+| Mensaje exacto | `Gemini respondió 401: Request had invalid authentication credentials. Expected OAuth 2 access token` |
+| Causa | Las claves nuevas con prefijo "AQ." fallan en varios proyectos; en los foros de Google no hay solución oficial |
+| Decisión | Retirar la IA en la nube. En su lugar, PaddleOCR dentro del celular: gratis, sin claves, y la foto no sale del dispositivo |
+| Prueba | Comparación en Chromium con la misma factura: PaddleOCR leyó 353 kWh incluso en la captura de 616×500 donde Tesseract falló ([lector-facturas.md](lector-facturas.md)) |
+| Aprendizaje | Depender de un servicio externo gratuito es frágil. Una solución que corre en el propio dispositivo es más confiable y más privada |
+
+### E09 · "27 días" en lugar de 28 (28 sep)
+
+| Campo | Respuesta |
+|---|---|
+| Error observado | En fotos, los días facturados salían 27 |
+| Causa | Del 14 de agosto al 10 de septiembre hay 27 días de diferencia, pero la empresa cuenta ambos extremos: 28 |
+| Solución | Cuando el número no aparece escrito, se calcula la diferencia + 1; prueba agregada |
+| Aprendizaje | "Cuántos días hay entre dos fechas" depende de si se cuentan los extremos: hay que saber qué convención usa la fuente |
+
 ---
 
 ## Decisiones
@@ -84,6 +104,7 @@
 |---|---|---|
 | 28/09 | El periodo se nombra por el mes en que termina la lectura | Así lo hace el histórico de la factura; si no, dos consumos distintos quedarían como "agosto" |
 | 28/09 | Normalizar consumos a 30 días | Los periodos duran entre 28 y 33 días |
-| 28/09 | La IA no calcula; solo lee facturas y explica resultados | Los cálculos deben ser verificables y tener pruebas |
+| 28/09 | La IA no calcula; solo lee texto en fotos | Los cálculos deben ser verificables y tener pruebas |
+| 28/09 | Lector de fotos dentro del celular (PaddleOCR) en vez de IA en la nube | Gratis, privado, sin claves; probado con la factura de referencia |
 | 28/09 | No guardar fotos ni datos personales | Los usuarios son menores de edad; no se necesitan |
 | 28/09 | Funciones de seguridad en el esquema `privado` | El asesor de Supabase advirtió que se podían llamar desde la API |

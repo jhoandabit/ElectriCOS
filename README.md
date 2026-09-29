@@ -11,7 +11,7 @@ MEDIR   → COMPRENDER  →          ACTUAR       → VERIFICAR
 
 El consumo entra de dos formas, que terminan en el mismo modelo de datos y el mismo motor de cálculo:
 
-- **Factura**: PDF de la empresa, foto con cámara o de la galería. Lectura con IA, con el texto del PDF o con OCR, siempre validada y confirmada por la persona.
+- **Factura**: PDF de la empresa, foto con cámara o de la galería. Se lee dentro del celular (texto del PDF o PaddleOCR), siempre validada y confirmada por la persona. Ninguna imagen sale del dispositivo.
 - **Manual**: lecturas del medidor o consumo en kWh.
 
 ## Objetivo
@@ -29,8 +29,7 @@ _Completar por el equipo: nombre, grado y rol (líder técnico, frontend, datos,
 | Next.js 15 + React 19 + TypeScript | Interfaz y rutas de servidor |
 | Supabase (PostgreSQL + Auth + RLS) | Datos, cuentas y seguridad |
 | PDF.js | Texto y coordenadas de facturas en PDF |
-| Tesseract.js | OCR en el navegador (sin internet) |
-| Gemini (opcional) | Lectura de facturas difíciles y recomendaciones |
+| PaddleOCR (PP-OCRv6 tiny) + ONNX Runtime Web | Lectura de fotos con IA dentro del celular |
 | Vercel | Compilación y publicación |
 | tsx + node:test | Pruebas automáticas |
 
@@ -42,15 +41,13 @@ Ver [docs/arquitectura.md](docs/arquitectura.md).
 app/
 ├── page.tsx              contenedor: sesión → hogar → pantallas
 ├── components/           pantallas y piezas de la interfaz
-├── api/factura/          lectura de facturas con IA (servidor)
-├── api/recomendaciones/  recomendaciones con IA (servidor)
 └── lib/
     ├── calculos/         motor matemático y parámetros oficiales
     ├── factura/          lector de facturas y validación
-    ├── ia/               llamada a Gemini
     └── supabase/         cliente y capa de datos
 supabase/migrations/      esquema, RLS y ajustes de seguridad
 supabase/tests/           prueba de seguridad (RLS)
+scripts/preparar-ocr.mjs  copia ONNX Runtime y descarga los modelos al compilar
 tests/                    pruebas del motor y del lector
 docs/                     documentación para estudiar y defender
 ```
@@ -73,8 +70,6 @@ Luego abrir http://localhost:3000. Completar `.env.local` con los valores de la 
 |---|---|---|
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase → Project Settings → API | Sí |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase → Project Settings → API (clave `anon`) | Sí (RLS protege los datos) |
-| `GEMINI_API_KEY` | aistudio.google.com/apikey | **No**: solo servidor |
-| `IA_PROVEEDOR` | `gemini` | — |
 
 Nunca subir `.env.local` a GitHub ni usar la clave `service_role` en la app. Ver [docs/seguridad.md](docs/seguridad.md).
 
@@ -91,7 +86,7 @@ Nunca subir `.env.local` a GitHub ni usar la clave `service_role` en la app. Ver
 - Diagnóstico del mes: kWh, kWh en 30 días, huella, por persona, frente al promedio y a la subsistencia.
 - Línea base (promedio, mínimo, máximo, variación, tendencia) y meta de reducción con acciones.
 - Progreso: gráfico, tabla, energía, emisiones y dinero ahorrados.
-- Recomendaciones con IA o, sin ella, por reglas.
+- Recomendaciones calculadas con reglas a partir de los resultados.
 
 Fórmulas y fuentes: [docs/calculos.md](docs/calculos.md). Lector: [docs/lector-facturas.md](docs/lector-facturas.md).
 
@@ -113,6 +108,7 @@ Errores reales de la construcción, con causa y aprendizaje: [docs/bitacora.md](
 |---|---|---|
 | 0.1 | 25/09/2026 | Interfaz móvil, ingreso manual, primer OCR |
 | 0.2 | 28/09/2026 | Lector de facturas validado, cuentas, Supabase con RLS, línea base, huella, metas, progreso, recomendaciones, pruebas y documentación |
+| 0.3 | 28/09/2026 | Fotos con PaddleOCR en el celular; se retira la IA en la nube |
 
 ## Despliegue
 
