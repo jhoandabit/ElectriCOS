@@ -124,3 +124,5 @@ Cada `git push` a una rama crea una vista previa en Vercel; `main` se publica en
 ## Para docentes
 
 Plan de estudio por semanas, preguntas y retos de modificación: [docs/guia-docente.md](docs/guia-docente.md).
+
+Para estudiantes que no programan: [docs/guia-sin-programar.md](docs/guia-sin-programar.md).
