@@ -49,8 +49,8 @@ T12 Anónimo lee parámetros oficiales → OK
 | T12 | PDF de referencia | Factura EEP en PDF | 353 kWh, Cartago, 4, 28 días, 19 487 → 19 840 | `npm test` | ✓ |
 | T13 | Foto con PaddleOCR | Captura 616×500, foto torcida y región (anonimizadas) | 353 kWh, confianza alta | App compilada en Chromium: 8 s, 10 s y 4 s | ✓ |
 | T14 | Foto real del celular | Foto de la factura en papel | 353 kWh | **Pendiente** en la vista previa | ☐ |
-| T15 | Captura pequeña (616×500) | Imagen de la factura de referencia | 353 kWh, Cartago, estrato 4, periodo estimado 2026-09 y 30 días supuestos, ambos con aviso | Antes: periodo, días y estrato "No detectado" (E10). Después de la corrección: ✓ | ✓ |
 | T15 | Error de red | Sin internet al guardar | "Revisa tu conexión a internet" | Pendiente en clase | ☐ |
 | T16 | Acceso no autorizado | Estudiante B abre datos de A | 0 filas | Prueba RLS T4–T8 | ✓ |
+| T17 | Captura pequeña (616×500) | Imagen de la factura de referencia | 353 kWh, Cartago, estrato 4, periodo estimado 2026-09 y 30 días supuestos, ambos con aviso | Antes: periodo, días y estrato "No detectado" (E10). Después de la corrección: ✓ | ✓ |
 
 El "recorrido automático" usa la interfaz real en un navegador (Chromium) con un Supabase simulado; las pruebas de seguridad sí corren contra la base de datos real.
