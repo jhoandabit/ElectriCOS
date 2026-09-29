@@ -5,6 +5,8 @@ import { kwhMesNormalizado, redondear } from "../lib/calculos/motor";
 import { borrarRegistro, type RegistroConsumo } from "../lib/supabase/datos";
 import { nombreMes } from "./formato";
 
+const co = (n: number) => n.toLocaleString("es-CO", { maximumFractionDigits: 1 });
+
 const FUENTE: Record<RegistroConsumo["fuente"], string> = { factura: "Factura", manual: "Manual", historico: "Histórico" };
 
 export default function HistorialLista({ registros, onCambio }: { registros: RegistroConsumo[]; onCambio: () => Promise<void> }) {
@@ -40,10 +42,10 @@ export default function HistorialLista({ registros, onCambio }: { registros: Reg
               <strong>{nombreMes(r.periodo)}</strong>
               <small>
                 {FUENTE[r.fuente]}
-                {r.dias ? ` · ${r.dias} días · ${redondear(kwhMesNormalizado({ periodo: r.periodo, kwh: r.consumo_kwh, dias: r.dias }))} kWh/30 d` : ""}
+                {r.dias ? ` · ${r.dias} días · ${co(redondear(kwhMesNormalizado({ periodo: r.periodo, kwh: r.consumo_kwh, dias: r.dias })))} kWh en 30 días` : ""}
               </small>
             </div>
-            <b>{redondear(r.consumo_kwh)} kWh</b>
+            <b>{co(redondear(r.consumo_kwh))} kWh</b>
             <button className="icon-button chico" aria-label={`Borrar ${nombreMes(r.periodo)}`} onClick={() => borrar(r)} disabled={borrando === r.id}>
               ✕
             </button>

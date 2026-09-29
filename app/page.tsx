@@ -9,7 +9,7 @@ import { useCallback, useEffect, useState } from "react";
 import AuthScreen from "./components/AuthScreen";
 import BottomNav, { type Seccion } from "./components/BottomNav";
 import ConsumoForm from "./components/ConsumoForm";
-import HistorialLista from "./components/HistorialLista";
+import ConsumoScreen from "./components/ConsumoScreen";
 import HogarForm from "./components/HogarForm";
 import HomeScreen from "./components/HomeScreen";
 import InvoiceScanner, { type MetodoLectura } from "./components/InvoiceScanner";
@@ -172,7 +172,7 @@ export default function App() {
             onHogar={setHogar}
             onTerminar={() => {
               setLectura(null);
-              ir("inicio");
+              ir("consumo");
             }}
           />
         </Pantalla>
@@ -190,19 +190,14 @@ export default function App() {
       return (
         <Pantalla titulo="Consumo" icono="▣" pie={nav}>
           {errorGlobal}
-          <section className="action-section">
-            <button className="action-card" onClick={() => { setLectura(null); ir("factura"); }}>
-              <span className="action-icon" aria-hidden="true">📷</span>
-              <span><strong>Leer factura</strong><small>Foto o PDF de la empresa de energía.</small></span>
-              <b aria-hidden="true">›</b>
-            </button>
-            <button className="action-card" onClick={() => { setLectura(null); ir("formulario"); }}>
-              <span className="action-icon" aria-hidden="true">✍️</span>
-              <span><strong>Ingresar manualmente</strong><small>Escribir las lecturas o el consumo.</small></span>
-              <b aria-hidden="true">›</b>
-            </button>
-          </section>
-          <HistorialLista registros={registros} onCambio={recargar} />
+          <ConsumoScreen
+            hogar={hogar}
+            registros={registros}
+            parametros={parametros}
+            onFactura={() => { setLectura(null); ir("factura"); }}
+            onManual={() => { setLectura(null); ir("formulario"); }}
+            onCambio={recargar}
+          />
         </Pantalla>
       );
 
@@ -236,8 +231,7 @@ export default function App() {
             registros={registros}
             meta={meta}
             parametros={parametros}
-            onFactura={() => { setLectura(null); ir("factura"); }}
-            onManual={() => { setLectura(null); ir("formulario"); }}
+            onConsumo={() => ir("consumo")}
             onMeta={() => ir("meta")}
           />
         </Pantalla>

@@ -1369,3 +1369,67 @@ button:disabled {
 .creditos p { margin: 0; font-size: 13.5px; line-height: 1.5; color: var(--fg); }
 .creditos small { color: var(--muted); font-size: 11.5px; line-height: 1.4; }
 .guia-opciones { margin: 0 0 6px; padding-left: 20px; font-size: 14px; line-height: 1.5; color: var(--fg); }
+
+/* ---------- Resultado del mes en tarjetas que se amplían ---------- */
+.tarjetas-cabecera { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.tarjetas-cabecera small { color: var(--muted); font-size: 12px; }
+.tarjetas { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.tarjeta {
+  position: relative;
+  border-radius: 16px;
+  background: var(--soft);
+  border: 1px solid transparent;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+}
+.tarjeta.abierta { grid-column: 1 / -1; border-color: var(--border); box-shadow: 0 10px 26px rgba(31, 43, 56, 0.1); }
+.tarjeta-cara {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  width: 100%;
+  display: grid;
+  gap: 3px;
+  padding: 13px 12px 11px;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 16px;
+}
+.tarjeta-cara:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.tarjeta-pregunta { font-size: 13px; font-weight: 700; color: var(--dark); }
+.tarjeta-valor { font-size: 23px; line-height: 1.1; letter-spacing: -0.02em; color: var(--fg); margin-top: 2px; }
+.tarjeta-sub { font-size: 12.5px; font-weight: 600; color: var(--muted); line-height: 1.3; }
+.tarjeta-mas { margin-top: 4px; font-size: 12px; font-weight: 700; color: var(--accent); }
+.tarjeta.tono-alerta { background: #ffeadb; }
+.tarjeta.tono-alerta .tarjeta-valor { color: var(--dark); }
+.tarjeta.tono-bien { background: var(--verde-suave); }
+.tarjeta.tono-bien .tarjeta-valor { color: var(--verde); }
+.tarjeta-detalle { padding: 0 12px 13px; display: grid; gap: 8px; animation: tarjeta-aparece 0.2s ease; }
+.tarjeta-detalle p { margin: 0; font-size: 14px; line-height: 1.5; color: #3a4654; }
+.tarjeta-detalle .cuenta {
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--surface);
+  border: 1px dashed var(--border);
+  font-size: 13.5px;
+}
+@keyframes tarjeta-aparece { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+/* Con mouse: al pasar por encima la tarjeta crece un poco (invita a tocarla). */
+@media (hover: hover) {
+  .tarjeta:not(.abierta):hover { transform: scale(1.045); box-shadow: 0 12px 28px rgba(31, 43, 56, 0.14); z-index: 2; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tarjeta, .tarjeta-detalle { transition: none; animation: none; }
+  .tarjeta:not(.abierta):hover { transform: none; }
+}
+@media (max-width: 340px) {
+  .tarjetas { grid-template-columns: 1fr; }
+}
+.selector-mes { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 18px; font-size: 14px; font-weight: 700; color: var(--fg); }
+.selector-mes select { flex: 1; max-width: 220px; min-height: 42px; padding: 0 10px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface); font: inherit; font-weight: 600; color: var(--fg); }
+.resumen-mes { display: grid; gap: 10px; }
+.resumen-cifras { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.resumen-cifras div { padding: 12px; border-radius: 14px; background: var(--soft); display: grid; gap: 2px; }
+.resumen-cifras span { font-size: 12px; font-weight: 700; color: var(--muted); }
+.resumen-cifras strong { font-size: 22px; letter-spacing: -0.02em; }
