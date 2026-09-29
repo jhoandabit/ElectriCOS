@@ -9,7 +9,7 @@ npm install
 npm test
 ```
 
-19 pruebas en `tests/`: motor matemático (huella, 30 días, línea base, meta, avance, subsistencia) y lector (factura de referencia anonimizada, trampas numéricas, fila del medidor, formatos colombianos, vuelta del medidor, renglones de una foto torcida, días del periodo, municipio).
+23 pruebas en `tests/`: motor matemático (huella, 30 días, línea base, meta, avance, subsistencia) y lector (factura de referencia anonimizada, trampas numéricas, fila del medidor, formatos colombianos, vuelta del medidor, renglones de una foto torcida, días del periodo, municipio, y el texto real que PaddleOCR leyó de una captura pequeña).
 
 ## 2. Pruebas de seguridad (RLS)
 
@@ -49,6 +49,7 @@ T12 Anónimo lee parámetros oficiales → OK
 | T12 | PDF de referencia | Factura EEP en PDF | 353 kWh, Cartago, 4, 28 días, 19 487 → 19 840 | `npm test` | ✓ |
 | T13 | Foto con PaddleOCR | Captura 616×500, foto torcida y región (anonimizadas) | 353 kWh, confianza alta | App compilada en Chromium: 8 s, 10 s y 4 s | ✓ |
 | T14 | Foto real del celular | Foto de la factura en papel | 353 kWh | **Pendiente** en la vista previa | ☐ |
+| T15 | Captura pequeña (616×500) | Imagen de la factura de referencia | 353 kWh, Cartago, estrato 4, periodo estimado 2026-09 con aviso; días en blanco | Antes: periodo, días y estrato "No detectado" (E10). Después de la corrección: ✓ | ✓ |
 | T15 | Error de red | Sin internet al guardar | "Revisa tu conexión a internet" | Pendiente en clase | ☐ |
 | T16 | Acceso no autorizado | Estudiante B abre datos de A | 0 filas | Prueba RLS T4–T8 | ✓ |
 

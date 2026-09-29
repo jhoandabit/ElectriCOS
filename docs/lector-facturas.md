@@ -68,6 +68,20 @@ En las fotos, PaddleOCR entrega cajas sueltas. `agruparEnRenglones` las encadena
 
 Números que **no** deben confundirse con el consumo (prueba "trampas" en `tests/factura.test.ts`): 905,0529 (pesos por kWh), 156 574 y 162 910 (dinero), 349 864 (total), 173 y 180 (franjas), 267 (promedio).
 
+## Qué hace el lector cuando la imagen no alcanza
+
+La calidad de la imagen pone un límite que ningún programa supera. En una captura de 616×500 píxeles, el periodo mide unos 5 píxeles de alto y el OCR lo lee como `6MAG0行026-105EPG224` (bitácora E10). En esos casos:
+
+| Dato | Qué hace ElectriCOs |
+|---|---|
+| Consumo y lecturas | Se leen de la fila del medidor (números grandes) y se validan: 19 840 − 19 487 = 353 |
+| Estrato | Acepta confusiones típicas: `Estrato; 4`, `Cro172  4` |
+| Municipio | Corrige hasta 2 letras mal leídas: `Ctago` → Cartago |
+| Periodo | Si es ilegible, lo **estima** con la fecha de emisión y lo marca "(estimado)" con un aviso |
+| Días facturados | Si son ilegibles, **no se inventan**: la persona los escribe |
+
+Consejo para la foto: de frente, con buena luz, que la factura llene la pantalla y sin zoom digital. Si la empresa envía el PDF, usar el PDF.
+
 ## Experimento sugerido (módulo 12)
 
 Con 10 facturas distintas (PDF y fotos en distintas condiciones), llenen esta tabla:

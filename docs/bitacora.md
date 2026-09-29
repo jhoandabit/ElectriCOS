@@ -96,6 +96,17 @@
 | Solución | Cuando el número no aparece escrito, se calcula la diferencia + 1; prueba agregada |
 | Aprendizaje | "Cuántos días hay entre dos fechas" depende de si se cuentan los extremos: hay que saber qué convención usa la fuente |
 
+### E10 · En la imagen, periodo, días y estrato salían "No detectado" (28 sep)
+
+| Campo | Respuesta |
+|---|---|
+| Error observado | Con el PDF todo salía bien. Con la imagen (captura de 616×500 píxeles) salían bien el consumo, las lecturas y el municipio, pero no el periodo, los días ni el estrato |
+| Cómo se diagnosticó | Se ejecutó PaddleOCR sobre la misma imagen y se leyó el texto que produjo ("Ver texto técnico reconocido" en la app) |
+| Hallazgos | El periodo "14/AGO/2026 - 10/SEP/2026" salió como `6MAG0行026-105EPG224`: la letra mide unos 5 píxeles y ninguna IA la puede leer. "Días facturados 28" salió como `Dim factur 21`. El estrato sí estaba, pero mal escrito: `Cro172  4` (en vez de `CT0172  4`) y `Estrato; 4` (punto y coma en vez de dos puntos) |
+| Hipótesis descartada | Ampliar la imagen antes de leerla: al doble y al triple el periodo siguió ilegible y el municipio empeoró ("Cmrtag", "Ctago") |
+| Solución | Aceptar las confusiones típicas del OCR (`;` por `:`, `Cro`/`CTo` por `CT0`, hasta 2 letras mal leídas en el municipio). Si el periodo es ilegible, deducirlo de la fecha de emisión (letra grande) y **marcarlo como estimado** con un aviso. Los días ilegibles **no se inventan**. Pruebas con el texto real del OCR en `tests/fixtures/eep-ocr-captura-*.txt` |
+| Aprendizaje | Una IA no puede leer lo que la imagen no contiene. Cuando un dato no se puede leer, es mejor decirlo (o estimarlo y avisar) que inventarlo. El PDF siempre es la mejor fuente |
+
 ---
 
 ## Decisiones
@@ -108,3 +119,4 @@
 | 28/09 | Lector de fotos dentro del celular (PaddleOCR) en vez de IA en la nube | Gratis, privado, sin claves; probado con la factura de referencia |
 | 28/09 | No guardar fotos ni datos personales | Los usuarios son menores de edad; no se necesitan |
 | 28/09 | Funciones de seguridad en el esquema `privado` | El asesor de Supabase advirtió que se podían llamar desde la API |
+| 28/09 | Si el periodo no se lee, se estima con la fecha de emisión y se avisa; los días no se estiman | El mes casi siempre se puede deducir; un número de días inventado cambiaría la normalización a 30 días |
