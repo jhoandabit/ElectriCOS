@@ -124,6 +124,7 @@ export async function leerRecuadro(
   ctx.fillRect(0, 0, recorte.width, recorte.height);
   ctx.imageSmoothingQuality = "high";
   ctx.drawImage(imagen, sx, sy, sw, sh, 0, 0, recorte.width, recorte.height);
+  if ("close" in imagen) imagen.close(); // soltar la foto completa enseguida
   const recorteUrl = recorte.toDataURL("image/jpeg", 0.85);
 
   alProgresar("Leyendo esa parte…");

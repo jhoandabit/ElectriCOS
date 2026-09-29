@@ -35,7 +35,8 @@ async function rutaModelo(nombre: string) {
     const r = await fetch(local, { method: "HEAD" });
     if (r.ok) return { url: local };
   } catch {
-    /* sin red o sin archivo: se usa la ruta oficial */
+    // Sin señal: se usa la copia guardada en el celular (service worker).
+    return { url: local };
   }
   return undefined; // el SDK usa su dirección oficial por defecto
 }

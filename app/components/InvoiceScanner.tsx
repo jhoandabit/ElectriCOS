@@ -3,7 +3,7 @@
 import { ChangeEvent, useEffect, useRef, useState } from "react";
 import { leerFactura } from "../lib/factura/leer-factura";
 import { leerRecuadro, type Recuadro, type ResultadoGuiado } from "../lib/factura/ocr-guiado";
-import { precargarLector } from "../lib/factura/ocr-paddle";
+import { esIOS, precargarLector } from "../lib/factura/ocr-paddle";
 import type { AvisoLectura, DatosFactura, FuenteLectura, ResultadoLectura } from "../lib/factura/tipos";
 import { validarYCompletar } from "../lib/factura/validar";
 import SelectorRecuadro from "./SelectorRecuadro";
@@ -40,14 +40,14 @@ type Props = {
 export const MARCA_ELIGIENDO = "electricos-eligiendo-foto";
 const marcar = () => {
   try {
-    sessionStorage.setItem(MARCA_ELIGIENDO, String(Date.now()));
+    localStorage.setItem(MARCA_ELIGIENDO, String(Date.now()));
   } catch {
     /* navegación privada: no pasa nada */
   }
 };
 const desmarcar = () => {
   try {
-    sessionStorage.removeItem(MARCA_ELIGIENDO);
+    localStorage.removeItem(MARCA_ELIGIENDO);
   } catch {
     /* sin almacenamiento */
   }
@@ -102,7 +102,9 @@ export default function InvoiceScanner({ onUsar, recargada = false }: Props) {
 
     const ultimo = files[files.length - 1];
     setArchivo(ultimo);
-    setVistaPrevia(pdf ? "" : URL.createObjectURL(ultimo));
+    // La foto original NO se muestra (en iPhone pesa ≈ 50 MB en memoria);
+    // al terminar se muestra la versión reducida que usó el lector.
+    setVistaPrevia("");
     setGuiaAbierta(false);
     setRecuadro(null);
     setGuiado(null);
@@ -121,6 +123,7 @@ export default function InvoiceScanner({ onUsar, recargada = false }: Props) {
         n += 1;
       }
       if (!resultado) return;
+      if (resultado.miniatura) setVistaPrevia(resultado.miniatura);
       setPartes(pdf ? 0 : n);
       if (n > 1) {
         resultado = {
@@ -153,7 +156,13 @@ export default function InvoiceScanner({ onUsar, recargada = false }: Props) {
     setLeyendo(true);
     setError("");
     try {
-      const r = await leerRecuadro(archivo, recuadro, setEstado);
+      // En iPhone se recorta la foto reducida: abrir otra vez la original
+      // (12–24 MP) puede dejar a Safari sin memoria.
+      const fuente =
+        esIOS() && vistaPrevia
+          ? new File([await (await fetch(vistaPrevia)).blob()], "factura.jpg", { type: "image/jpeg" })
+          : archivo;
+      const r = await leerRecuadro(fuente, recuadro, setEstado);
       setGuiado(r);
       const nuevos = r.datos;
       if (!Object.keys(nuevos).length) {

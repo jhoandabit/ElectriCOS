@@ -51,8 +51,8 @@ export default function App() {
   // se vuelve a "Leer factura" (y no a Inicio, como si nada hubiera pasado).
   useEffect(() => {
     try {
-      const marca = Number(sessionStorage.getItem(MARCA_ELIGIENDO));
-      sessionStorage.removeItem(MARCA_ELIGIENDO);
+      const marca = Number(localStorage.getItem(MARCA_ELIGIENDO));
+      localStorage.removeItem(MARCA_ELIGIENDO);
       if (marca && Date.now() - marca < 15 * 60 * 1000) {
         setVista("factura");
         setRecargada(true);
@@ -126,8 +126,17 @@ export default function App() {
     window.scrollTo({ top: 0 });
   };
 
+  // Cierra la sesión EN ESTE CELULAR sin esperar a internet ("local"): antes,
+  // con datos lentos o sin señal, el cierre fallaba en silencio y no pasaba nada.
   const salir = async () => {
-    await supabase().auth.signOut();
+    try {
+      await supabase().auth.signOut({ scope: "local" });
+    } catch {
+      /* igual se sale */
+    }
+    setSesion(null);
+    setLectura(null);
+    setAviso("");
     ir("inicio");
   };
 
