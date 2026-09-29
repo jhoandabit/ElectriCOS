@@ -53,6 +53,18 @@ const desmarcar = () => {
   }
 };
 
+/** Traduce errores técnicos del navegador ("Load failed", "Failed to fetch"…). */
+function mensajeDeError(e: unknown) {
+  const m = (e as Error)?.message ?? "";
+  if (/load failed|failed to fetch|networkerror|network error|fetch/i.test(m)) {
+    return "No se pudo descargar el lector de fotos (la primera vez son unos 30 MB). Revisa la conexión, idealmente con WiFi, y vuelve a elegir la foto. Mientras tanto puedes ingresar los datos a mano.";
+  }
+  if (/memory|memoria|out of bounds|abort/i.test(m)) {
+    return "El celular se quedó sin memoria leyendo la foto. Cierra otras apps y pestañas y vuelve a intentarlo, o toma la factura por partes.";
+  }
+  return m || "No fue posible leer la factura. Puedes ingresar los datos a mano.";
+}
+
 export default function InvoiceScanner({ onUsar, recargada = false }: Props) {
   const [archivo, setArchivo] = useState<File | null>(null);
   const [vistaPrevia, setVistaPrevia] = useState("");
@@ -133,7 +145,7 @@ export default function InvoiceScanner({ onUsar, recargada = false }: Props) {
       setMetodo(resultado.fuente);
       if (!pdf && resultado.confianzaConsumo < 80 && n === 1) setGuiaAbierta(true);
     } catch (e) {
-      setError((e as Error).message || "No fue posible leer la factura. Puedes ingresar los datos a mano.");
+      setError(mensajeDeError(e));
     } finally {
       desmarcar();
       setLeyendo(false);
