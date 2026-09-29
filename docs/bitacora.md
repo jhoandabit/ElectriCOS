@@ -107,6 +107,17 @@
 | Solución | Aceptar las confusiones típicas del OCR (`;` por `:`, `Cro`/`CTo` por `CT0`, hasta 2 letras mal leídas en el municipio). Si el periodo es ilegible, deducirlo de la fecha de emisión (letra grande) y **marcarlo como estimado** con un aviso. Si los días son ilegibles no se usa el número falso (21): se asumen 30, marcados como "supuesto". Pruebas con el texto real del OCR en `tests/fixtures/eep-ocr-captura-*.txt` |
 | Aprendizaje | Una IA no puede leer lo que la imagen no contiene. Cuando un dato no se puede leer, es mejor decirlo (o estimarlo y avisar) que inventarlo. El PDF siempre es la mejor fuente |
 
+### E11 · "No se encontraron las lecturas en ese recuadro" (28 sep)
+
+| Campo | Respuesta |
+|---|---|
+| Error observado | En la lectura guiada, la docente encerró la línea del **periodo** (que faltaba) y la app respondió que no encontraba las lecturas |
+| Causa 1 | La lectura guiada solo buscaba la fila del medidor; no servía para otros datos |
+| Solución 1 | Ahora toma lo que encuentre en el recuadro: lecturas, periodo, días o estrato. Fechas tolerantes a errores del OCR ("14AGO/2026", "14/AG0/2026") |
+| Prueba | Con la franja real de la captura (`tests/fixtures/eep-banda-medidor-periodo-616px.jpg`): la fila del medidor se lee completa (353 kWh, promedio 267). La línea del periodo, aun recortada y ampliada 4 veces, sale como `SMLAGOG36-1NSEPGE26` y "Dian facturadas 21" |
+| Causa 2 | En esa captura el periodo mide unos 5 píxeles: la información no está en la imagen. La app no acepta el "21" (no dice "días" y no coincide con nada) |
+| Aprendizaje | Ampliar no crea detalle que la foto no tiene. Para esos datos: foto más cerca, el PDF, o escribirlos a mano |
+
 ---
 
 ## Decisiones
