@@ -81,25 +81,51 @@ export function municipioConocido(candidato: string | null): string | null {
   return mejor?.nombre ?? candidato;
 }
 
+/** Nombre conocido si el texto es (o se parece mucho a) un municipio de la lista. */
+function conocidoONada(candidato: string | null | undefined): string | null {
+  if (!candidato) return null;
+  const r = municipioConocido(candidato);
+  return r && MUNICIPIOS_CONOCIDOS.includes(r) ? r : null;
+}
+
+/**
+ * Municipio del inmueble, de la pista más confiable a la menos:
+ *   1. Etiqueta "Municipio: 147 Cartago" (EEP).
+ *   2. Alumbrado público: "ALCALDIA CARTAGO", "MUNICIPIO DE CARTAGO" (lo cobra el municipio del inmueble).
+ *   3. Dirección del inmueble: "Dir. inmueble: … - CARTAGO" (Celsia).
+ *   4. El municipio conocido que más aparece.
+ *   5. Lo que diga la etiqueta aunque no esté en la lista.
+ * Ojo: textos legales como "…en los municipios de Buga, Cartago…" NO cuentan
+ * como etiqueta (antes daban "Buga" en la factura de Celsia).
+ */
 function buscarMunicipio(t: string): string | null {
-  const m = t.match(/municipi[oc0]\s*[:.\-]?\s*(?:de\s+)?(?:\d{1,5}\s*[-.]?\s*)?([a-z][a-z .]{2,30}?)(?=\s{2,}|\s*[-,:/(]|\s+(?:depto|departamento|ciclo|estrato|servicio|barrio|ruta|valle|risaralda|caldas)|\n|$)/);
-  if (m) {
-    const candidato = m[1].trim();
-    const conocido = MUNICIPIOS_CONOCIDOS.find((x) => normalizarTexto(x) === candidato);
-    if (conocido) return conocido;
-    if (candidato.length >= 3 && !/\d/.test(candidato)) {
-      return candidato.replace(/\b\w/g, (c) => c.toUpperCase());
-    }
+  const etiqueta = t.match(/\bmunicipi[oc0]\s*[:.]\s*(?:\d{1,5}\s*[-.]?\s*)?([a-z][a-z .]{2,30}?)(?=\s{2,}|\s*[-,:/(]|\s+(?:depto|departamento|ciclo|estrato|servicio|barrio|ruta|valle|risaralda|caldas)|\n|$)/);
+  const deEtiqueta = conocidoONada(etiqueta?.[1]);
+  if (deEtiqueta) return deEtiqueta;
+
+  for (const m of t.matchAll(/\b(?:alcaldia(?:\s+(?:municipal\s+)?de)?|municipio\s+de)\s+([a-z][a-z .]{2,30})/g)) {
+    const nombre = conocidoONada(m[1].trim());
+    if (nombre) return nombre;
   }
 
-  // Sin etiqueta: el municipio conocido que más aparece en el texto.
+  const direccion = t.match(/dir(?:eccion)?\.?\s*(?:del\s*)?inmueble\s*:?[^\n]*/);
+  if (direccion) {
+    const enLinea = MUNICIPIOS_CONOCIDOS.map((nombre) => ({ nombre, pos: direccion[0].lastIndexOf(normalizarTexto(nombre)) }))
+      .filter((x) => x.pos >= 0)
+      .sort((x, y) => y.pos - x.pos);
+    if (enLinea.length) return enLinea[0].nombre;
+  }
+
   let mejor: { nombre: string; veces: number } | null = null;
   for (const nombre of MUNICIPIOS_CONOCIDOS) {
-    const n = normalizarTexto(nombre);
-    const veces = t.split(n).length - 1;
+    const veces = t.split(normalizarTexto(nombre)).length - 1;
     if (veces > 0 && (!mejor || veces > mejor.veces)) mejor = { nombre, veces };
   }
-  return mejor?.nombre ?? null;
+  if (mejor) return mejor.nombre;
+
+  const candidato = etiqueta?.[1].trim();
+  if (candidato && candidato.length >= 3 && !/\d/.test(candidato)) return candidato.replace(/\b\w/g, (c) => c.toUpperCase());
+  return null;
 }
 
 function buscarEstrato(t: string): number | null {
@@ -247,6 +273,25 @@ function buscarHistorico(t: string): PuntoHistorico[] {
     .slice(-12);
 }
 
+/**
+ * Valor del kWh en el detalle de cobros, comprobado con su total:
+ *   "501  314  Consumo Activa  Estandar  KWH  981.92  Excluido  308,323"
+ *   → 314 × 981,92 = 308.323 ✓
+ * Si no hay total que lo confirme, se acepta solo si está en un rango razonable.
+ */
+function valorEnLineaDeConsumo(t: string, consumo: number | null): number | null {
+  for (const linea of t.split("\n")) {
+    if (!/consumo\s*(?:activa|energia|kwh)|energia\s*activa/.test(linea) || !/\bkwh\b/.test(linea)) continue;
+    const despues = linea.slice(linea.search(/\bkwh\b/) + 3);
+    const nums = Array.from(despues.matchAll(/-?\d[\d.,]*/g)).map((m) => parseNumeroCO(m[0])).filter((n): n is number => n !== null);
+    const precio = nums.find((n) => n >= 250 && n <= 3000);
+    if (precio === undefined) continue;
+    if (consumo && nums.some((n) => Math.abs(n - consumo * precio) <= Math.max(2, consumo * precio * 0.001))) return precio;
+    if (!consumo) return precio;
+  }
+  return null;
+}
+
 export function extraerDeTexto(textoOriginal: string): DatosFactura {
   const t = normalizarTexto(textoOriginal);
   const datos: DatosFactura = { ...DATOS_VACIOS, historico: [] };
@@ -282,7 +327,9 @@ export function extraerDeTexto(textoOriginal: string): DatosFactura {
   datos.promedioKwh = promedio !== null && promedio >= 5 && promedio < 3000 ? promedio : null;
 
   const valorKwh = primerNumeroTras(t, /(?:valor|costo|precio|tarifa)\s*(?:unitario\s*)?(?:del\s*)?(?:kwh|unitario)|\bcu\b/, 30);
-  datos.valorKwh = valorKwh !== null && valorKwh >= 100 && valorKwh <= 5000 ? valorKwh : null;
+  // Un kWh cuesta entre ~250 y ~3000 pesos. Números menores junto a la
+  // etiqueta suelen ser otra cosa (Celsia: "Valor kWh:  kWh subsidiados: 173").
+  datos.valorKwh = valorKwh !== null && valorKwh >= 250 && valorKwh <= 3000 ? valorKwh : null;
 
   const total = primerNumeroTras(t, /total\s*a\s*pagar|valor\s*a\s*pagar|total\s*factura|pague\s*hasta/, 40);
   datos.totalPagar = total !== null && total >= 1000 ? total : null;
@@ -318,6 +365,8 @@ export function extraerDeTexto(textoOriginal: string): DatosFactura {
   }
   if (e.estrato && datos.estrato === null) datos.estrato = e.estrato;
   if (e.valorKwh) datos.valorKwh = e.valorKwh;
+  const deLinea = valorEnLineaDeConsumo(t, datos.consumoKwh);
+  if (deLinea) datos.valorKwh = deLinea;
   if (e.totalPagar) datos.totalPagar = e.totalPagar;
   if (e.historico && e.historico.length >= datos.historico.length) datos.historico = e.historico;
 

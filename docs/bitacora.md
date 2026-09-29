@@ -118,6 +118,16 @@
 | Causa 2 | En esa captura el periodo mide unos 5 píxeles: la información no está en la imagen. La app no acepta el "21" (no dice "días" y no coincide con nada) |
 | Aprendizaje | Ampliar no crea detalle que la foto no tiene. Para esos datos: foto más cerca, el PDF, o escribirlos a mano |
 
+### E12 · Factura de Celsia: lecturas iguales, "Buga" y kWh a $173 (28 sep)
+
+| Campo | Respuesta |
+|---|---|
+| Error observado | Celsia (Cartago, estrato 2): lecturas 24919 → 24919, municipio Buga, valor del kWh $173 |
+| Causa | 1) Las lecturas estaban en una **tabla** (encabezado arriba, números abajo) y la búsqueda "número después de la etiqueta" tomó 24919 para las dos. 2) Un texto legal decía "…en los municipios de Buga, Cartago…" y se tomó como etiqueta. 3) "Valor kWh:" estaba vacío y el número siguiente era "kWh subsidiados: 173" |
+| Solución | Leer tablas por el orden de sus columnas y aceptar solo si actual − anterior × múltiplo = consumo; municipio por etiqueta con dos puntos, alcaldía del alumbrado público o dirección del inmueble; valor del kWh desde la línea "Consumo Activa … KWH 981.92 … 308,323", comprobado (314 × 981,92 = 308.323). También se lee el gráfico bimestral de consumos |
+| Prueba | `tests/fixtures/celsia-factura-referencia.txt` (anonimizado) |
+| Aprendizaje | Cada empresa organiza la factura distinto. Las reglas deben apoyarse en comprobaciones matemáticas, no solo en etiquetas |
+
 ---
 
 ## Decisiones

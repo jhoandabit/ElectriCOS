@@ -142,7 +142,11 @@ export function validarYCompletar(entrada: DatosFactura): {
     const hoy = new Date();
     const limite = hoy.getFullYear() * 12 + hoy.getMonth() + 1;
     if (anio * 12 + mes > limite + 1 || anio < 2015) {
-      avisos.push({ nivel: "revisar", campo: "periodo", mensaje: `El periodo ${datos.periodo} no parece correcto.` });
+      // Un periodo en el futuro es una lectura equivocada (el OCR confunde 6 y 8:
+      // "2026" → "2028"). No se usa: la persona lo escribe.
+      avisos.push({ nivel: "revisar", campo: "periodo", mensaje: `Se leyó el periodo ${datos.periodo}, que no es posible. Escribe el mes correcto.` });
+      datos.periodo = null;
+      datos.periodoEstimado = undefined;
     }
   }
 

@@ -49,6 +49,78 @@ function filaMedidor(t: string): Partial<DatosEstructura> | null {
   return null;
 }
 
+/**
+ * Tabla con encabezado, como la de Celsia (y muchas otras empresas):
+ *   Tipo de energía  Lectura actual (kWh)  Lectura anterior (kWh)  Múltiplo  Consumo
+ *   Energía Activa   24919                 24605                   1         314
+ * Se lee el orden de las columnas en el encabezado y se toman los números del
+ * renglón siguiente en ese mismo orden. Solo se acepta si las cuentas cuadran.
+ */
+function lecturasEnTabla(t: string): Partial<DatosEstructura> | null {
+  const lineas = t.split("\n");
+  for (let i = 0; i + 1 < lineas.length; i++) {
+    const enc = lineas[i];
+    const pAct = enc.search(/lectura\s*actual/);
+    const pAnt = enc.search(/lectura\s*anterior/);
+    if (pAct < 0 || pAnt < 0) continue;
+    // Los valores pueden estar en el renglón siguiente o dos más abajo.
+    for (const fila of lineas.slice(i + 1, i + 3)) {
+      const nums = numerosDeLinea(fila).filter((n) => Number.isFinite(n));
+      const enteros = nums.filter((n) => Number.isInteger(n));
+      if (enteros.length < 2) continue;
+      const [x, y] = enteros;
+      const actual = pAct < pAnt ? x : y;
+      const anterior = pAct < pAnt ? y : x;
+      const dif = actual - anterior;
+      if (dif <= 0 || dif >= 3000) continue;
+      // Después de las lecturas puede venir: [diferencia] [múltiplo] consumo.
+      // Se busca un número igual a diferencia × el número anterior (el múltiplo).
+      const resto = enteros.slice(2);
+      for (let j = 1; j < resto.length; j++) {
+        const f = resto[j - 1];
+        if (f > 0 && f <= 1000 && Math.abs(resto[j] - dif * f) <= 1) {
+          return { lecturaAnterior: anterior, lecturaActual: actual, factorMultiplicador: f, consumoKwh: resto[j] };
+        }
+      }
+      return { lecturaAnterior: anterior, lecturaActual: actual, consumoKwh: dif };
+    }
+  }
+  return null;
+}
+
+/**
+ * Gráfico de barras con meses, como en Celsia:
+ *   119 kWh  112 kWh  121 kWh  153 kWh  129 kWh  544 kWh  314 kWh
+ *   SEP  NOV  ENE  MAR  MAY  JUL  Actual
+ * Los días de cada periodo se deducen del salto entre meses (bimestral ≈ 61).
+ */
+function historicoEnGrafico(t: string, periodo: string | undefined): PuntoHistorico[] {
+  const lineas = t.split("\n");
+  for (let i = 1; i < lineas.length; i++) {
+    const meses = Array.from(lineas[i].matchAll(new RegExp(String.raw`\b(${MESES_CORTOS})\b`, "g"))).map((m) => mesDesdeTexto(m[1]) as number);
+    if (meses.length < 3 || !/\bactual\b/.test(lineas[i])) continue;
+    // Los valores están unos renglones más arriba (entre ellos puede haber otros textos).
+    for (const arriba of lineas.slice(Math.max(0, i - 4), i).reverse()) {
+      const valores = Array.from(arriba.matchAll(/(\d{1,4})\s*kwh/g)).map((m) => Number(m[1]));
+      if (valores.length !== meses.length + 1) continue; // + la barra "Actual"
+      const hoy = new Date();
+      let [anio, mesRef] = periodo ? periodo.split("-").map(Number) : [hoy.getFullYear(), hoy.getMonth() + 1];
+      const puntos: PuntoHistorico[] = [];
+      for (let k = meses.length - 1; k >= 0; k--) {
+        const mes = meses[k];
+        if (mes >= mesRef) anio -= 1;
+        const salto = (mesRef - mes + 12) % 12 || 12;
+        puntos.unshift({ periodo: formatoPeriodo(anio, mes), kwh: valores[k], dias: Math.round(salto * 30.4) });
+        mesRef = mes;
+      }
+      // El primer punto no tiene anterior: se le asigna el mismo salto que al segundo.
+      if (puntos.length > 1) puntos[0].dias = puntos[1].dias;
+      return puntos;
+    }
+  }
+  return [];
+}
+
 /** "14/AGO/2026 - 10/SEP/2026  28" → periodo y días. */
 function rangoFechas(t: string): Partial<DatosEstructura> | null {
   // Una fecha: "14/ago/2026", "14-08-2026" y lo que deja el OCR: "14ago/2026", "14/ag0/2026".
@@ -140,7 +212,7 @@ export function extraerPorEstructura(textoOriginal: string): DatosEstructura {
   const t = normalizarTexto(textoOriginal);
   const datos: DatosEstructura = {};
 
-  const medidor = filaMedidor(t);
+  const medidor = filaMedidor(t) ?? lecturasEnTabla(t);
   if (medidor) Object.assign(datos, medidor);
 
   const liquidacion = liquidacionPorRangos(t);
@@ -162,7 +234,8 @@ export function extraerPorEstructura(textoOriginal: string): DatosEstructura {
   if (total) datos.totalPagar = total;
 
   const historico = tablaHistorico(t, datos.periodo);
-  if (historico.length) datos.historico = historico;
+  const grafico = historicoEnGrafico(t, datos.periodo);
+  if (historico.length || grafico.length) datos.historico = historico.length >= grafico.length ? historico : grafico;
 
   return datos;
 }

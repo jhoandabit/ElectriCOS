@@ -193,3 +193,34 @@ test("lectura guiada: la fila del medidor", () => {
   assert.equal(r.periodo, undefined); // nada estimado en un recorte
   assert.equal(r.diasFacturados, undefined);
 });
+
+// Factura real de Celsia (Cartago, estrato 2, facturación bimestral), texto
+// tal como lo entrega PDF.js en la app. Datos personales borrados.
+test("Celsia PDF: lecturas en tabla, valor del kWh, municipio y bimestre", () => {
+  const texto = readFileSync(new URL("./fixtures/celsia-factura-referencia.txt", import.meta.url), "utf8");
+  const { datos, confianzaConsumo } = validarYCompletar(extraerDeTexto(texto));
+  assert.equal(datos.empresa, "celsia");
+  assert.equal(datos.consumoKwh, 314);
+  // "Lectura actual (kWh)  Lectura anterior (kWh)" → 24919  24605 (antes salía 24919 → 24919)
+  assert.equal(datos.lecturaAnterior, 24605);
+  assert.equal(datos.lecturaActual, 24919);
+  assert.equal(confianzaConsumo >= 95, true);
+  assert.equal(datos.diasFacturados, 61); // bimestral
+  assert.equal(datos.periodo, "2026-09"); // 14/JUL/2026 – 12/SEP/2026
+  assert.equal(datos.estrato, 2);
+  // Antes "Buga": salía de un texto legal ("…en los municipios de Buga, Cartago…")
+  assert.equal(datos.municipio, "Cartago");
+  // Antes 173 (eran los kWh subsidiados). 314 × 981,92 = 308.323 ✓
+  assert.equal(datos.valorKwh, 981.92);
+  // Gráfico bimestral: SEP NOV ENE MAR MAY JUL + Actual
+  assert.deepEqual(datos.historico.map((p) => [p.periodo, p.kwh, p.dias]), [
+    ["2025-09", 119, 61], ["2025-11", 112, 61], ["2026-01", 121, 61],
+    ["2026-03", 153, 61], ["2026-05", 129, 61], ["2026-07", 544, 61],
+  ]);
+});
+
+test("un periodo en el futuro (OCR: 2026 → 2028) no se usa", () => {
+  const { datos, avisos } = validarYCompletar(extraerDeTexto("Periodo facturado: 14/JUL/2028 - 12/SEP/2028\nConsumo mes: 314 kWh"));
+  assert.equal(datos.periodo, null);
+  assert.ok(avisos.some((a) => a.campo === "periodo"));
+});

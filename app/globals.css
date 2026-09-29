@@ -1393,15 +1393,15 @@ button:disabled {
   width: calc(200% + 10px);
   z-index: 7;
   border-radius: 18px;
-  background-color: var(--surface);
-  border: 1px solid var(--border);
+  background-color: var(--soft);
+  border: 1px solid #f0d9c6;
   box-shadow: 0 22px 50px rgba(31, 43, 56, 0.28);
   animation: tarjeta-crece 0.22s ease;
 }
 .tarjeta-flotante.hacia-derecha { left: -6px; transform-origin: top left; }
 .tarjeta-flotante.hacia-izquierda { right: -6px; transform-origin: top right; }
-.tono-alerta > .tarjeta-flotante { background-color: #fff4ec; }
-.tono-bien > .tarjeta-flotante { background-color: #f7fbef; }
+.tono-alerta > .tarjeta-flotante { background-color: #ffeadb; }
+.tono-bien > .tarjeta-flotante { background-color: var(--verde-suave); border-color: #d6e6b3; }
 @keyframes tarjeta-crece { from { opacity: 0; transform: scale(0.6); } to { opacity: 1; transform: scale(1); } }
 .tarjeta-cara {
   appearance: none;

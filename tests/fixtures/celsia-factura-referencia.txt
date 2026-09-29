@@ -1,0 +1,153 @@
+NOMBRE ANONIMIZADO
+Septiembre de 2026
+0000000000
+Al día
+$183,447  OCT/02/2026
+OCT/05/2026
+314 kWh
+
+CÓDIGO:  0000000000  NIU:  0000000  Pago oportuno hasta:
+NOMBRE ANONIMIZADO  2026/10/02
+Dir. inmueble:  DIRECCION ANONIMIZADA - CARTAGO
+Dir. envío:  Suspensión desde:
+Ref. dirección:  OCT/05/2026
+Residencial  Estrato:  2
+Ciclo / Ruta:  688 /  13-16-403-0006
+Paga en línea
+Mes:  Septiembre
+TOTAL CELSIA  $167,620
+Infórmate más:  TOTAL OTRAS ENTIDADES  $15,827
+Paga tu factura de energía desde la comodidad de tu hogar en Celsia.com.
+a través de PSE, Nequi, Wompi o Daviplata. Aprovecha y suscríbete a  TOTAL MES  $183,447
+factura digital y deja de recibir tu factura en papel: más organización, más
+SALDO ANTERIOR  $0
+rápida y directo a tu correo.
+TOTAL A PAGAR  $183,447
+Canales de atención para ti
+*Cobros diferentes a energía según Anexo No.2
+Ingresa a Celsia.com  / Zona Clientes  WhatsApp:  310 390 34 68  Línea gratuita 24/7:  018000 112115  del Contrato de Condiciones Uniformes, CCU
+ENERGÍA:
+Tu consumo:  Tu subsidio:  Saldos pendientes:
+www.celsia.com  Consumo mes:  314 kWh  Porcentaje:  43.05%  Facturas elect. sin pagar:  0
+Valor kWh:  kWh subsidiados:  173  Valor pendiente:  $0
+Días facturados:  61  Valor tarifa subsidio:  $422.72  Tasa de mora  :  .50
+Periodo facturado:  14/JUL/2026 - 12/SEP/2026  Valor subsidiado:  -$132,734  Acuerdos de pago vigentes:  0
+Valor último pago:  $383,859  Saldo de pago energía:
+Fecha de último pago:  31/JUL/2026
+Últimos consumos (kWh)  LO QUE NOS DICE TU MEDIDOR DE ENERGÍA
+Promedio últimos 6 meses:  275 kWh
+Tipo de energía  Lectura actual (kWh)  Lectura  anterior  (kWh)  Múltiplo  Consumo
+Energía Activa  24919  24605  1  314
+Teléfono: (2) 3210000
+119 kWh  112 kWh  121 kWh  153 kWh  129 kWh  544 kWh  314 kWh
+Medidor
+4716879
+SEP  NOV  ENE  MAR  MAY  JUL  Actual
+RESUMEN CONCEPTOS FACTURADOS:
+Energía  Tienda Celsia  Aseo  Alumbrado público  Otros
+$167,620  $0  $0  $15,827  $0
+Código  Cant.  Descripción  Tipo operación  Unidad medida  Valor unitario  Impuesto  Valor impuesto  Descuento  Valor sin IVA
+1  501  314  Consumo Activa  Estandar  KWH  981.92  Excluido  308,323
+2  581  1  Intereses Mora  Estandar  UN  244.00  Excluido  244
+3  952  1  Ajuste Int Mora-Serv Gravados  Estandar  UN  1.00  Gravado  0  1
+4  #  1617  1  Alq. Medidor 1f/2h 1x8+8  Estandar  UN  1,556.00  Gravado  296  1,556
+5  227  1  Compensaciones Creg 015  Estandar  UN  -10,066.00  Excluido  10,066  0
+6  197  1  Interes Impuesto A.P  Mandato  UN  11.00  Excluido  11
+7  571  1  Impuesto A. Publico  Mandato  UN  15,816.00  Excluido  15,816
+8  561  1  Subsidio  Estandar  UN  -132,734.00  Excluido  -132,734
+9
+10
+11
+12
+Calle 15 No. 29 B 30, Autopista Cali – Yumbo, Valle del Cauca  13
+14
+15
+16
+17
+18
+19
+20
+TOTAL MES  $296  $10,066  $193,217
+Total base antes de IVA:  $193,217  +  Total IVA:  $296  +  Otros:  -  Total descuentos:  $10,066  =  Total a pagar:  $183,447
+SERVICIOS QUE RECIBES DE OTRAS ENTIDADES*
+ASEO*
+Servicio prestado por:
+NIT:  Subsidio/Contribución (%):  Limpieza urbanos:  Ordinarios:  Rechazados:
+Clase de uso:  Subsidio/Contribución ($):  Frecuendia lavado:  Fact. últimos 6 meses ($):
+Estrato:  Costo fijo total:  Frecuencia (veces/semana):  Mes 1:  Mes 2:  Mes 3:
+Periodo facturado:  Cargo variable NA:  Aprovechable:  No aprovechable:  Mes 4:  Mes 5:  Mes 6:
+Valor financiado:  Cargo variable A:  Barrido:  Aforo mes (m3):  Toneladas aprovechables (Ton,A):
+Cuotas pendientes:  Otros cargos:  Frecuencia poda (año):  Mes 1:  Mes 2:  Mes 3:
+Saldo anterior:  Barrido y limpieza:  Frecuencia corte (mes):  Toneladas no aprovechables (Ton,NA):
+Und. Residenciales:  TBL:  TRT:  TDF:  TA:  Mes 1:  Mes 2:  Mes 3:
+CELSIA COLOMBIA S.A. E.S.P. NIT: 800.249.860-1
+TLU:  TTL:  TC:
+IMPUESTO DE ALUMBRADO PÚBLICO*
+Servicio prestado por:  ALCALDIA CARTAGO
+Acuerdo del Concejo Municipal:  025 de 2024 (27 dic 2024)  Oficina de atención al ciudadano:  Cll 8 No. 5 - 68  Tel:  6022114118  Saldo anterior:  0
+CLIENTE  PERIODO FACTURADO  ID DE COBROS  CÓDIGO  PAGO OPORTUNO
+NOMBRE ANONIMIZADO  14/JUL/2026 - 12/SEP/2026  000000000035  0000000000  2026/10/02
+CELSIA COLOMBIA S.A  Factura electrónica de venta:  XXXX00000000
+E.S.P
+VALOR
+NIT. 800.249.860-1
+A PAGAR:  $183,447
+
+Información general sobre tu servicio de energía
+Calidad del servicio
+Grupo:  32  Vr. a compensar:  0  Circuito:  10000021  Mes  Junio  Mayo
+Horas a compensar:  .00  Eventos a compensar:  .00  INDICADORES  DURACIÓN  FRECUENCIA  DURACIÓN  FRECUENCIA
+Consumo estimado a compensar:  .00  Garantizado (DIUG-FIUG)  57.02  26.00  57.02  26.00
+Cargo de distibución:  377.20
+Mensual (DIUM-FIUM)  .00  .00  22.18  3.00
+Porcentaje descuento cargo de distribución:  20.00
+Transformador SSPD:  65722570  Acumulado (DIU-FIU)  60.42  17.00  61.82  18.00
+Operador de red energía
+Operador:  Celsia Colombia S.A E.S.P  Dirección:  Cl 15 N° 20B-30 Autopista Cali - Yumbo  Tel. Daños:  018000112115  Nivel de tensión:  1
+Red:  Aerea  Nodo:  213325  Propiedad transformador:  Empresa  Transformador:  65722570
+¿Cómo calculamos el valor de cada kWh?
+Costo unitario aplicado
+Generación  +  Comercialización  +  Transmisión  +  Distribución  +  Pérdidas  +  Restricciones  +  Otros  =
+$394.91  $154.55  $60.44  $275.90  $73.82  $22.30  $.00
+Información general sobre tu factura electrónica de venta de energía
+Identificación (NIT-CC):  000000000000
+Fact. elect. venta:  XXXX00000000  •  Fecha y hora de generación:  15/09/2026 15:16:32  •  Fecha y hora de expedición:  15/09/2026 15:44:52
+Fecha de vencimiento:  2026/10/02  •  Forma de pago:  Transferencia Débito Bancaria  •  Medio de pago:  Crédito.
+CUFE 000
+Efactura CADENA NIT:890.930.534-0 - SAC Celsia Colombia S.A. E.S.P. NIT: 800249860-1
+Fondo de Energía Social, FOES
+Consumo:  Factura de referencia:  Formula liquidación:  Valor:  Resolución:
+Macro ZE - (C) 27 - (V) 17,936  Subsidio ZE - (C) 27 - (V) - 8,968  Diferencia ZE - (C) 0 - (V) - 8,968  Subtotal: 0T
+Autogenerador de energía eléctrica
+Tipo de registro de energía:  Energía (kWh):  Tarifa ($/kWh)  Subtotal ($)
+Consumo importado:
+Crédito de energía:
+Valoración horaria:
+Capacidad del sistema:  Saldo a favor acumulado:
+Total excedentes:
+Forma de pago excedentes:  Fecha de desembolso:
+Resolución CREG 105 - 007 de 2024 el periodo facturado actual, tu consumo de energía presenta una desviación signicativa en el límite:
+De acuerdo con nuestro proceso de facturación, te contamos:
+*Causa de desviación:
+*Tu consumo leído
+*
+Comunidad energética  Tipo de pago por servicio  Pásate a factura digital  CUFE
+AC-Auto generador colectivo:  Tipo  Código  Servicio
+Usuarios del AC:  K  47  Alumbrado público
+% Distribución excedentes:  3  265  Seguro RedAssist
+Energía del AC (kWh):
+D  30  Energía - Aseo
+Energía del usuario (kWh):
+R  9  Conexos
+6  60  Retail
+7  70  Seguros
+Actividad económica principal 3514. Grandes Contribuyentes según Resolución # 000200 del 27-Dic-2024. Responsable impuesto sobre las ventas. Agente retenedor de IVA artículo 437-2 (numeral 2) del E. T.
+Autorretenedor en Renta según Res. # 0547 del 25 de enero de 2002, no efectuar retención en la fuente por ventas del servicio público de energía según D.R. 2885 de 2001. Autorretenedor ICA en los municipios de  Actividad económica principal 3514. Grandes Contribuyentes según Resolución # 000200 del 27-Dic-2024. Responsable impuesto sobre las ventas. Agente retenedor de IVA artículo 437-2 (numeral 2) del E.
+T. Autorretenedor en Renta según Res. # 0547 del 25 de enero de 2002, no efectuar retención en la fuente por ventas del servicio público de energía según D.R. 2885 de 2001. Autorretenedor ICA en los  Proveedor de impresión: Carvajal Soluciones de Comunicación S.A.S NIT: 800.096.812-8  Guadalajara de Buga, Cartago, Jamundí, Pereira, La Cumbre y Alcalá. Esta factura se asimila para todos sus efectos a una letra de cambio y por lo tanto sirve de título ejecutivo, según artículo 774 del Código de Comercio.
+Autorización numeración de factura electrónica No.18764075658921 de 24-07-2024 hasta el 24-07-2026 con vigencia 24 meses, rango 1 a 12000000, prefijo CCCV.  municipios de Guadalajara de Buga, Cartago, Jamundí, Pereira, La Cumbre y Alcalá. Esta factura se asimila para todos sus efectos a una letra de cambio y por lo tanto sirve de título ejecutivo, según artículo
+774 del Código de Comercio. Autorización numeración de factura electrónica No. 18764108975843 de 27/04/2026 del hasta el 18764108975843 de 27/04/2026 - 26/04/2028 rango 12000001 a 31000000
+prefijo CCTT
+Pagos digitales  Pagos presenciales  Bancos  Puntos de pago Celsia
+www.celsia.com:  App:  Buenaventura
+Corresponsales bancarios
+Powered by TCPDF (www.tcpdf.org)
