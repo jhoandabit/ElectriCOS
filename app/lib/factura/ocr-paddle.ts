@@ -186,7 +186,7 @@ export async function leerGraficoDeBarras(
   const leerColumna = async (r: Rotulo): Promise<number | null> => {
     const sx = Math.max(0, Math.round(r.cx - paso * 0.3));
     const sw = Math.min(imagen.width - sx, Math.round(paso * 0.6));
-    const techo = r.y0 - paso * 2.6;
+    const techo = r.y0 - paso * 4; // la barra más alta puede estar lejos del rótulo
     // 1. Número derecho encima del rótulo, dentro de la columna (el más cercano).
     const derechos = numeros
       .filter((h) => h.cx > r.cx - paso * 0.45 && h.cx < r.cx + paso * 0.45 && h.y1 < r.y0 - 1 && h.y0 > techo)
