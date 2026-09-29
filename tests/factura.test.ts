@@ -221,12 +221,26 @@ test("Celsia PDF: lecturas en tabla, valor del kWh, municipio y bimestre", () =>
 
 test("un periodo en el futuro (OCR: 2026 → 2028) no se usa", () => {
   const { datos, avisos } = validarYCompletar(extraerDeTexto("Periodo facturado: 14/JUL/2028 - 12/SEP/2028\nConsumo mes: 314 kWh"));
-  assert.equal(datos.periodo, null);
-  assert.ok(avisos.some((a) => a.campo === "periodo"));
+  assert.equal(datos.periodo, null); // sin otras fechas para corregir el año: se pide escribirlo
+  assert.ok(avisos.some((a) => a.mensaje.includes("periodo")));
 });
 
 test("lectura guiada: la tabla de últimos consumos", () => {
   const r = datosDeRecorte(["MAR  207  162,374  31", "ABR  178  145,654  30", "MAY  256  213,529  31"]);
   assert.equal(r.historico?.length, 3);
   assert.deepEqual(r.historico?.[1], { periodo: r.historico?.[1].periodo, kwh: 178, dias: 30 });
+});
+
+test("foto de Celsia: año mal leído (2028) y 'Clasificación' no son el periodo ni el municipio", () => {
+  const original = readFileSync(new URL("./fixtures/celsia-factura-referencia.txt", import.meta.url), "utf8");
+  // Así lo deja el OCR: 6 → 8 en el periodo y la etiqueta "Clasificación" pegada.
+  const texto = original
+    .replace("14/JUL/2026 - 12/SEP/2026", "14/JUL/2028 - 12/SEP/2028")
+    .replace("Residencial  Estrato:  2", "Clasificaciónc  Residencial  Estrato:  2");
+  const { datos, avisos } = validarYCompletar(extraerDeTexto(texto));
+  assert.equal(datos.municipio, "Cartago");
+  assert.equal(datos.periodo, "2026-09"); // el mes se conserva; el año sale de las demás fechas
+  assert.equal(datos.periodoEstimado, true);
+  assert.ok(avisos.some((a) => a.campo === "periodo"));
+  assert.equal(datos.historico[datos.historico.length - 1].periodo, "2026-07"); // también se corrige
 });

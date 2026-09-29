@@ -154,7 +154,7 @@ export function validarYCompletar(entrada: DatosFactura): {
     avisos.push({
       nivel: "revisar",
       campo: "periodo",
-      mensaje: `El periodo (${datos.periodo}) no se pudo leer y se dedujo de la fecha de emisión. Confírmalo en la factura.`,
+      mensaje: `El periodo (${datos.periodo}) no se pudo leer con seguridad y se dedujo de otras fechas de la factura. Confírmalo.`,
     });
   }
 

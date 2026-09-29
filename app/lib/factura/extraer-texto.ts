@@ -160,6 +160,24 @@ export function periodoDesdeEmision(t: string): string | null {
   return formatoPeriodo(referencia.getUTCFullYear(), referencia.getUTCMonth() + 1);
 }
 
+function periodoFuturo(periodo: string) {
+  const [anio, mes] = periodo.split("-").map(Number);
+  const hoy = new Date();
+  return anio * 12 + mes > hoy.getFullYear() * 12 + hoy.getMonth() + 2;
+}
+
+/** Mismo mes, con el año más frecuente (y posible) entre las fechas del texto. */
+export function repararAnio(t: string, periodo: string): string | null {
+  const mes = Number(periodo.split("-")[1]);
+  const conteo = new Map<number, number>();
+  for (const m of t.matchAll(/\b(20\d{2})\b/g)) {
+    const anio = Number(m[1]);
+    if (!periodoFuturo(formatoPeriodo(anio, mes)) && anio >= 2015) conteo.set(anio, (conteo.get(anio) ?? 0) + 1);
+  }
+  const mejor = [...conteo.entries()].sort((a, b) => b[1] - a[1] || b[0] - a[0])[0];
+  return mejor ? formatoPeriodo(mejor[0], mes) : null;
+}
+
 function buscarDias(t: string): number | null {
   const m =
     t.match(/d[i1]as\s*(?:facturados|de\s*consumo|fact\.?|consumo)\s*[:.\-]?\s*(\d{1,3})\b/) ??
@@ -350,8 +368,26 @@ export function extraerDeTexto(textoOriginal: string): DatosFactura {
   datos.promedioKwh = e.promedioKwh ?? datos.promedioKwh;
   if (e.periodo) datos.periodo = e.periodo;
   if (e.diasFacturados) datos.diasFacturados = e.diasFacturados;
-  if (e.municipio) datos.municipio = e.municipio;
+  // "147 Cartago  Residencial" (EEP). Solo se usa si es un municipio conocido:
+  // en una foto de Celsia daba "Clasificaciónc  Residencial" → "Clasificaciónc".
+  const municipioEstructura = conocidoONada(e.municipio);
+  if (municipioEstructura) datos.municipio = municipioEstructura;
+  else if (!datos.municipio && e.municipio) datos.municipio = e.municipio;
   datos.municipio = municipioConocido(datos.municipio);
+  if (e.historico && e.historico.length >= datos.historico.length) datos.historico = e.historico;
+  // Año imposible (el OCR confunde 6 y 8: "12/SEP/2028"): se conserva el mes
+  // y se toma el año que más se repite en las demás fechas de la factura.
+  // Se marca como estimado para que la persona lo confirme.
+  if (datos.periodo && periodoFuturo(datos.periodo)) {
+    const reparado = repararAnio(t, datos.periodo);
+    if (reparado) {
+      // Los meses anteriores se calcularon con el año equivocado: se corrigen igual.
+      const salto = Number(reparado.slice(0, 4)) - Number(datos.periodo.slice(0, 4));
+      datos.historico = datos.historico.map((p) => ({ ...p, periodo: `${Number(p.periodo.slice(0, 4)) + salto}${p.periodo.slice(4)}` }));
+      datos.periodoEstimado = true;
+    }
+    datos.periodo = reparado;
+  }
   if (!datos.periodo) {
     datos.periodo = periodoDesdeEmision(t);
     if (datos.periodo) datos.periodoEstimado = true;
@@ -368,7 +404,6 @@ export function extraerDeTexto(textoOriginal: string): DatosFactura {
   const deLinea = valorEnLineaDeConsumo(t, datos.consumoKwh);
   if (deLinea) datos.valorKwh = deLinea;
   if (e.totalPagar) datos.totalPagar = e.totalPagar;
-  if (e.historico && e.historico.length >= datos.historico.length) datos.historico = e.historico;
 
   return datos;
 }
