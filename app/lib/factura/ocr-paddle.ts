@@ -172,12 +172,14 @@ function contrastar(origen: HTMLCanvasElement) {
 }
 
 /**
- * Entre lecturas distintas de la misma barra: la que más se repite y, si
- * empatan, la de más dígitos (el error típico es perder uno: "121" → "12").
+ * Entre lecturas distintas de la misma barra: la que más lecturas apoyan y,
+ * si empatan, la de más dígitos. El error típico es perder un dígito
+ * ("121" → "12"), así que "12" cuenta como apoyo para "121".
  */
 export function elegirLectura(valores: number[]): number {
-  const veces = (v: number) => valores.filter((x) => x === v).length;
-  return [...valores].sort((a, b) => veces(b) - veces(a) || String(b).length - String(a).length)[0];
+  // Una lectura apoya a otra si es igual o le falta el final ("12" apoya a "121").
+  const apoyo = (v: number) => valores.filter((x) => String(v).startsWith(String(x))).length;
+  return [...valores].sort((a, b) => apoyo(b) - apoyo(a) || String(b).length - String(a).length)[0];
 }
 
 type Rotulo = { texto: string; cx: number; y0: number; cy: number };
@@ -267,7 +269,6 @@ export async function leerGraficoDeBarras(
     // El texto de Celsia se lee de abajo hacia arriba (giro horario); el giro
     // contrario queda de respaldo para otras facturas. Se agrega un margen
     // blanco: sin él, el primer dígito (pegado al borde) se pierde ("121" → "12").
-    // Si dos intentos coinciden, ese es el valor.
     const intentos: [HTMLCanvasElement, boolean][] = [
       [recorte, true],
       [contrastar(recorte), true],
@@ -278,25 +279,19 @@ export async function leerGraficoDeBarras(
     const probar = async (lienzo: HTMLCanvasElement, horario: boolean) => {
       const leido = (await reconocer(conMargen(girar90(lienzo, horario), 16))).map((c) => c.texto).join(" ");
       const m = leido.match(/(\d{1,4})\s*k\s*w/i);
-      if (m) {
-        const v = Number(m[1]);
-        const repetido = conKwh.includes(v);
-        conKwh.push(v);
-        return repetido ? v : null;
+      if (m) conKwh.push(Number(m[1]));
+      else if (suelto === null) {
+        const n = leido.match(/\b(\d{2,4})\b/);
+        if (n) suelto = Number(n[1]);
       }
-      const n = leido.match(/\b(\d{2,4})\b/);
-      if (n && suelto === null) suelto = Number(n[1]);
-      return null;
     };
-    for (const [lienzo, horario] of intentos) {
-      const v = await probar(lienzo, horario);
-      if (v !== null) return v;
+    for (const [i, [lienzo, horario]] of intentos.entries()) {
+      await probar(lienzo, horario);
+      // Los dos primeros intentos coinciden: no hace falta el tercero.
+      if (i === 1 && conKwh.length === 2 && conKwh[0] === conKwh[1]) return conKwh[0];
     }
     if (!conKwh.length) {
-      for (const lienzo of [recorte, contrastar(recorte)]) {
-        const v = await probar(lienzo, false);
-        if (v !== null) return v;
-      }
+      for (const lienzo of [recorte, contrastar(recorte)]) await probar(lienzo, false);
     }
     if (conKwh.length) return elegirLectura(conKwh);
     return suelto;

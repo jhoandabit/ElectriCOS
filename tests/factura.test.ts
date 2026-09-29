@@ -248,6 +248,8 @@ test("foto de Celsia: año mal leído (2028) y 'Clasificación' no son el period
 test("gráfico de fotos: entre lecturas distintas de una barra gana la de más dígitos", () => {
   assert.equal(elegirLectura([12, 121]), 121);
   assert.equal(elegirLectura([153]), 153);
+  assert.equal(elegirLectura([121, 12, 12]), 121); // "12" es "121" sin el último dígito
+  assert.equal(elegirLectura([129, 125, 129]), 129);
 });
 
 test("barras ilegibles (0 kWh) se quitan antes de compararlas con el consumo", () => {
