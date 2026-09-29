@@ -13,7 +13,7 @@ import {
   type NuevoRegistro,
   type RegistroConsumo,
 } from "../lib/supabase/datos";
-import { mesActual, nombreMes } from "./formato";
+import { mesActual, mesAnterior, nombreMes } from "./formato";
 import type { MetodoLectura } from "./InvoiceScanner";
 import ResultadoMes from "./ResultadoMes";
 
@@ -60,6 +60,10 @@ export default function ConsumoForm({ hogar, registros, parametros, lectura, met
   // Por defecto se guardan también los meses anteriores que trae la factura:
   // así la familia tiene su promedio (línea base) desde el primer día.
   const [conHistorico, setConHistorico] = useState(true);
+  // Si la factura no dejó leer los meses anteriores (foto borrosa, otra
+  // empresa…), la persona puede escribirlos mirando la factura.
+  const [aMano, setAMano] = useState<Record<string, { kwh: string; dias: string }>>({});
+  const [verAMano, setVerAMano] = useState(false);
 
   const set = (k: keyof Campos, v: string) => {
     setC((x) => ({ ...x, [k]: v }));
@@ -79,6 +83,16 @@ export default function ConsumoForm({ hogar, registros, parametros, lectura, met
   const d = lectura?.datos;
   const hogarDistinto = d && ((d.estrato && d.estrato !== hogar.estrato) || (d.municipio && d.municipio.toLowerCase() !== hogar.municipio.toLowerCase()));
   const historicoNuevo = (d?.historico ?? []).filter((p) => p.periodo < c.periodo && !registros.some((r) => r.periodo === p.periodo));
+  // Los 6 meses anteriores al periodo que todavía no están guardados.
+  const mesesPrevios: string[] = [];
+  for (let m = mesAnterior(c.periodo), k = 0; k < 6; k++, m = mesAnterior(m)) {
+    if (!registros.some((r) => r.periodo === m)) mesesPrevios.unshift(m);
+  }
+  const escritos = mesesPrevios
+    .filter((m) => aMano[m]?.kwh)
+    .map((m) => ({ periodo: m, kwh: Number(aMano[m].kwh), dias: aMano[m].dias ? Number(aMano[m].dias) : undefined }));
+  const ponerAMano = (m: string, campo: "kwh" | "dias", v: string) =>
+    setAMano((x) => ({ ...x, [m]: { kwh: x[m]?.kwh ?? "", dias: x[m]?.dias ?? "", [campo]: v } }));
 
   const enviar = async (e: FormEvent) => {
     e.preventDefault();
@@ -89,6 +103,10 @@ export default function ConsumoForm({ hogar, registros, parametros, lectura, met
     if (!Number.isFinite(kwh) || kwh <= 0 || kwh >= 5000) return setError("Ingresa un consumo válido en kWh (entre 1 y 4999).");
     const dias = c.dias ? Number(c.dias) : null;
     if (dias !== null && (!Number.isInteger(dias) || dias < 1 || dias > 120)) return setError("Los días facturados deben estar entre 1 y 120.");
+    for (const p of escritos) {
+      if (!Number.isFinite(p.kwh) || p.kwh <= 0 || p.kwh >= 5000) return setError(`Revisa los kWh de ${nombreMes(p.periodo)} (entre 1 y 4999).`);
+      if (p.dias !== undefined && (!Number.isInteger(p.dias) || p.dias < 1 || p.dias > 120)) return setError(`Revisa los días de ${nombreMes(p.periodo)} (entre 1 y 120).`);
+    }
 
     const nuevo: NuevoRegistro = {
       periodo: c.periodo,
@@ -109,10 +127,11 @@ export default function ConsumoForm({ hogar, registros, parametros, lectura, met
           setAvisoTraza("El consumo se guardó, pero no la traza de la lectura.")
         );
       }
-      if (conHistorico && historicoNuevo.length) {
+      const meses = historicoNuevo.length ? (conHistorico ? historicoNuevo : []) : escritos;
+      if (meses.length) {
         // Tampoco bloquea: si falla, se puede reintentar con el botón de después.
         try {
-          setImportados(await importarHistorico(hogar.id, historicoNuevo));
+          setImportados(await importarHistorico(hogar.id, meses));
         } catch {
           setAvisoTraza("El consumo se guardó, pero no los meses anteriores. Puedes intentarlo de nuevo abajo.");
         }
@@ -257,6 +276,42 @@ export default function ConsumoForm({ hogar, registros, parametros, lectura, met
             <input type="checkbox" checked={conHistorico} onChange={(e) => setConHistorico(e.target.checked)} />
             <span>Guardar también estos {historicoNuevo.length} meses (recomendado)</span>
           </label>
+        </div>
+      )}
+
+      {historicoNuevo.length === 0 && mesesPrevios.length > 0 && (
+        <div className="form-section historico-factura">
+          <h3>Meses anteriores</h3>
+          <p className="field-help">
+            {lectura
+              ? "No pudimos leer los meses anteriores en la factura. Casi todas los traen en una tabla o gráfico de \"últimos consumos\": escríbelos aquí y tendrás tu promedio de una vez."
+              : "Si tienes los consumos de meses anteriores (en esta u otras facturas), escríbelos aquí y tendrás tu promedio de una vez."}
+          </p>
+          {!verAMano ? (
+            <button type="button" className="secondary-button" onClick={() => setVerAMano(true)}>
+              Escribir los meses anteriores
+            </button>
+          ) : (
+            <table className="tabla-a-mano">
+              <thead>
+                <tr><th>Mes</th><th>kWh</th><th>Días</th></tr>
+              </thead>
+              <tbody>
+                {mesesPrevios.map((m) => (
+                  <tr key={m}>
+                    <td>{nombreMes(m)}</td>
+                    <td>
+                      <input type="number" inputMode="numeric" min={1} max={4999} aria-label={`kWh de ${nombreMes(m)}`} value={aMano[m]?.kwh ?? ""} onChange={(e) => ponerAMano(m, "kwh", e.target.value)} placeholder="kWh" />
+                    </td>
+                    <td>
+                      <input type="number" inputMode="numeric" min={1} max={120} aria-label={`Días de ${nombreMes(m)}`} value={aMano[m]?.dias ?? ""} onChange={(e) => ponerAMano(m, "dias", e.target.value)} placeholder="días" />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          {escritos.length > 0 && <span className="field-help">Se guardarán {escritos.length} {escritos.length === 1 ? "mes" : "meses"} junto con este.</span>}
         </div>
       )}
 

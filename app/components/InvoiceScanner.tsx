@@ -115,6 +115,7 @@ export default function InvoiceScanner({ onUsar }: Props) {
         nuevos.periodo && "periodo",
         nuevos.diasFacturados && "días facturados",
         nuevos.estrato && "estrato",
+        nuevos.historico && `${nuevos.historico.length} meses anteriores`,
       ].filter(Boolean);
       const v = validarYCompletar(datos);
       setLectura({
@@ -203,8 +204,9 @@ export default function InvoiceScanner({ onUsar }: Props) {
               Arrastra el dedo sobre la foto para encerrar <b>una sola línea</b>, con un poco de margen:
             </p>
             <ul className="guia-opciones">
-              <li>la fila <b>Activa</b> (número del medidor, lecturas y consumo), o</li>
-              <li>la línea <b>Periodo facturado</b> y <b>Días facturados</b>.</li>
+              <li>la fila <b>Activa</b> (número del medidor, lecturas y consumo),</li>
+              <li>la línea <b>Periodo facturado</b> y <b>Días facturados</b>, o</li>
+              <li>la tabla de <b>consumos de los últimos meses</b>.</li>
             </ul>
             <SelectorRecuadro src={vistaPrevia} valor={recuadro} onCambio={setRecuadro} />
             <div className="button-row">

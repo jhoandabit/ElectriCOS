@@ -374,7 +374,7 @@ export function extraerDeTexto(textoOriginal: string): DatosFactura {
 }
 
 export type DatosRecorte = Partial<
-  Pick<DatosFactura, "lecturaAnterior" | "lecturaActual" | "consumoKwh" | "factorMultiplicador" | "promedioKwh" | "periodo" | "diasFacturados" | "estrato">
+  Pick<DatosFactura, "lecturaAnterior" | "lecturaActual" | "consumoKwh" | "factorMultiplicador" | "promedioKwh" | "periodo" | "diasFacturados" | "estrato" | "historico">
 >;
 
 /**
@@ -396,5 +396,6 @@ export function datosDeRecorte(lineas: string[]): DatosRecorte {
   if (d.periodo && !d.periodoEstimado) r.periodo = d.periodo;
   if (d.diasFacturados && !d.diasEstimados) r.diasFacturados = d.diasFacturados;
   if (d.estrato) r.estrato = d.estrato;
+  if (d.historico.length >= 2) r.historico = d.historico; // la tabla de "últimos consumos"
   return r;
 }

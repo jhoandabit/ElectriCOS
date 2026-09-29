@@ -224,3 +224,9 @@ test("un periodo en el futuro (OCR: 2026 → 2028) no se usa", () => {
   assert.equal(datos.periodo, null);
   assert.ok(avisos.some((a) => a.campo === "periodo"));
 });
+
+test("lectura guiada: la tabla de últimos consumos", () => {
+  const r = datosDeRecorte(["MAR  207  162,374  31", "ABR  178  145,654  30", "MAY  256  213,529  31"]);
+  assert.equal(r.historico?.length, 3);
+  assert.deepEqual(r.historico?.[1], { periodo: r.historico?.[1].periodo, kwh: 178, dias: 30 });
+});

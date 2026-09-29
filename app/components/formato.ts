@@ -29,3 +29,9 @@ export function mesMedio(periodo: string) {
   const [anio, mes] = periodo.split("-").map(Number);
   return `${CORTOS[mes - 1] ?? "?"} ${anio}`;
 }
+
+/** Mes anterior: "2026-01" → "2025-12" */
+export function mesAnterior(periodo: string) {
+  const [anio, mes] = periodo.split("-").map(Number);
+  return mes === 1 ? `${anio - 1}-12` : `${anio}-${String(mes - 1).padStart(2, "0")}`;
+}

@@ -1455,3 +1455,7 @@ button:disabled {
 .resumen-cifras div { padding: 12px; border-radius: 14px; background: var(--soft); display: grid; gap: 2px; }
 .resumen-cifras span { font-size: 12px; font-weight: 700; color: var(--muted); }
 .resumen-cifras strong { font-size: 22px; letter-spacing: -0.02em; }
+.tabla-a-mano td { padding: 4px 4px; vertical-align: middle; }
+.tabla-a-mano input { width: 100%; min-height: 40px; padding: 0 8px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); font: inherit; text-align: right; }
+.tabla-a-mano td:first-child { white-space: nowrap; font-size: 13px; }
+.historico-factura p.field-help, .historico-factura span.field-help { font-size: 13.5px; line-height: 1.45; margin: 4px 0 8px; }
