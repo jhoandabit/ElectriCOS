@@ -58,8 +58,6 @@ export type ResultadoLectura = {
   confianzaConsumo: number;
   /** Texto crudo (solo para depuración, nunca se guarda) */
   textoTecnico?: string;
-  /** Foto reducida (URL local) para mostrarla y encerrar partes; nunca sale del celular. */
-  miniatura?: string;
 };
 
 export const DATOS_VACIOS: DatosFactura = {

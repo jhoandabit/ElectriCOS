@@ -3,7 +3,7 @@
 import { ChangeEvent, useEffect, useRef, useState } from "react";
 import { leerFactura } from "../lib/factura/leer-factura";
 import { leerRecuadro, type Recuadro, type ResultadoGuiado } from "../lib/factura/ocr-guiado";
-import { esIOS, precargarLector } from "../lib/factura/ocr-paddle";
+import { precargarLector } from "../lib/factura/ocr-paddle";
 import type { AvisoLectura, DatosFactura, FuenteLectura, ResultadoLectura } from "../lib/factura/tipos";
 import { validarYCompletar } from "../lib/factura/validar";
 import SelectorRecuadro from "./SelectorRecuadro";
@@ -102,9 +102,8 @@ export default function InvoiceScanner({ onUsar, recargada = false }: Props) {
 
     const ultimo = files[files.length - 1];
     setArchivo(ultimo);
-    // La foto original NO se muestra (en iPhone pesa ≈ 50 MB en memoria);
-    // al terminar se muestra la versión reducida que usó el lector.
-    setVistaPrevia("");
+    // Se muestra la foto original: se ve nítida y la lectura guiada la usa.
+    setVistaPrevia(pdf ? "" : URL.createObjectURL(ultimo));
     setGuiaAbierta(false);
     setRecuadro(null);
     setGuiado(null);
@@ -123,7 +122,6 @@ export default function InvoiceScanner({ onUsar, recargada = false }: Props) {
         n += 1;
       }
       if (!resultado) return;
-      if (resultado.miniatura) setVistaPrevia(resultado.miniatura);
       setPartes(pdf ? 0 : n);
       if (n > 1) {
         resultado = {
@@ -156,13 +154,7 @@ export default function InvoiceScanner({ onUsar, recargada = false }: Props) {
     setLeyendo(true);
     setError("");
     try {
-      // En iPhone se recorta la foto reducida: abrir otra vez la original
-      // (12–24 MP) puede dejar a Safari sin memoria.
-      const fuente =
-        esIOS() && vistaPrevia
-          ? new File([await (await fetch(vistaPrevia)).blob()], "factura.jpg", { type: "image/jpeg" })
-          : archivo;
-      const r = await leerRecuadro(fuente, recuadro, setEstado);
+      const r = await leerRecuadro(archivo, recuadro, setEstado);
       setGuiado(r);
       const nuevos = r.datos;
       if (!Object.keys(nuevos).length) {

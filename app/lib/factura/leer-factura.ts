@@ -67,9 +67,6 @@ export async function leerFactura(archivo: File, alProgresar: AlProgresar, texto
 
   alProgresar("Preparando la foto…");
   const foto = await prepararFoto(archivo, 2000);
-  const miniatura = await new Promise<string | undefined>((resolver) =>
-    foto.canvas.toBlob((b) => resolver(b ? URL.createObjectURL(b) : undefined), "image/jpeg", 0.85)
-  );
   const nuevo = await leerImagen(foto.canvas, alProgresar);
   const texto = textoPrevio ? `${textoPrevio}\n${nuevo}` : nuevo;
   if (!nuevo.trim()) {
@@ -79,5 +76,5 @@ export async function leerFactura(archivo: File, alProgresar: AlProgresar, texto
       mensaje: "No se encontró texto en la foto. Tómala de frente, completa y con buena luz, o usa la lectura guiada.",
     });
   }
-  return { ...terminar(extraerDeTexto(texto), "ocr-local", avisos, texto), miniatura };
+  return terminar(extraerDeTexto(texto), "ocr-local", avisos, texto);
 }

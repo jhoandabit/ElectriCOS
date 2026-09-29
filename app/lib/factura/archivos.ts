@@ -3,13 +3,8 @@
 // Lectura de archivos en el navegador: texto de PDFs, render de páginas
 // y fotos redimensionadas para el lector de texto. Nada sale del celular.
 
-// px: suficiente para leer una factura. En iPhone un poco menos, porque Safari
-// da poca memoria por pestaña (una foto de 2000 px ya ocupa ≈ 12 MB sin comprimir).
-const esIOS = () =>
-  typeof navigator !== "undefined" &&
-  (/iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1));
+// px: suficiente para leer una factura, liviano para el celular.
 const LADO_MAXIMO = 2000;
-const LADO_MAXIMO_IOS = 1700;
 
 export function esPdf(archivo: File) {
   return archivo.type === "application/pdf" || archivo.name.toLowerCase().endsWith(".pdf");
@@ -45,7 +40,8 @@ export async function prepararFoto(
   archivo: File,
   ladoPedido = LADO_MAXIMO
 ): Promise<{ canvas: HTMLCanvasElement }> {
-  const ladoMaximo = esIOS() ? Math.min(ladoPedido, LADO_MAXIMO_IOS) : ladoPedido;
+  // Misma resolución en todos los celulares: con 1700 px en iPhone se leía peor.
+  const ladoMaximo = ladoPedido;
   const imagen = await cargarImagen(archivo);
   const { ancho, alto } = dimensiones(imagen);
   const escala = Math.min(1, ladoMaximo / Math.max(ancho, alto));
