@@ -1,0 +1,62 @@
+### PARTE 1
+CÓDIGO:  NIU:  Pago oportuno hasta:
+2026/10/02
+Dir. inmueble:  - CARTAGO
+Dir. envío:  Suspensión desde:  CELSIA
+Ref. dirección:  OCT/05/2026  La energia que quieres
+Clasificación: Residencial  Estrato: 2
+Ciclo / Ruta:
+Paga en línea
+Mes: Septiembre  TOTAL CELSIA  $167,620
+Infórmate más:  TOTAL OTRAS ENTIDADES  $15,827
+Paga tu factura de energía desde la comodidad de tu hogar en Celsia.com.
+a través de PSE, Nequi, Wompi o Daviplata. Aprovecha y suscríbete a  TOTAL MES  $183,447
+factura digital y deja de recibir tu factura en papel: más organización, más  SALDO ANTERIOR  $0
+rápida y directo a tu correo.
+TOTAL A PAGAR  $183,447
+Canales de atención para ti
+Cobros diferentes a energía según Anexo No.2
+OO!  Ingresa a Celsia.com/ Zona Clientes • WhatsApp: 310 390 34 68· Línea gratuita 24/7: 018000 112115  del Contrato de Condiciones Uniformes, CCu
+### PARTE 2
+ENERGÍA:
+Tu consumo:  Tu subsidio:  Saldos pendientes:
+Consumo mes: 314 kWh  Porcentaje: 43.05%  Facturas elect. sin pagar: 0
+Valor kWh:  kWh subsidiados: 173  Valor pendiente: $0
+Días facturados: 61  Valor tarifa subsidio: $422.72  Tasa de mora: .50
+Periodo facturado:14/JUL/2026 - 12/SEP/2026  Valor subsidiado: -$132,734  Acuerdos de pago vigentes: 0
+Valor último pago: $383,859  Saldo de pago energía:
+Fecha de último pago: 31/JUL/2026
+Últimos consumos (kWh)  LO QUE NOS DICE TU MEDIDOR DE ENERGÍA
+Promedio últimos 6 meses: 275 kWh
+Tipo de energía  Lectura actual (kWh)  Lecturaanterior kwm)  Múltiplo  Consumo
+Energía Activa  24919  24605  314
+4MX  M  4MY  4MM  4MY  4Ms  HMYDLE  Medidor
+2  3
+SEP  NOV  ENE  MAR  MAY  JUL  Actual
+119 kWh  112 kWh  121 kWh  153 kWh  129 kWh  544 kWh  314 kWh
+SEP  NOV  ENE  MAR  MAY  JUL  Actual
+### PARTE 3
+RESUMEN CONCEPTOS FACTURADOS:
+Energía  Tienda Celsia  Aseo  Alumbrado público  Otros
+$167,620  $0  $0  $15,827  $0
+501  314  Consumo Activa  Estandar  KWH  981.92  Excluido  308,323
+581  Intereses Mora  Estandar  UN  244.00  Excluido  244
+952  111  Ajuste Int Mora-Serv Gravados  Estandar  UN  1.00  Gravado  0  1
+1617  Alq. Medidor 1f/2h 1x8+8  Estandar  UN  1,556.00  Gravado  296  1,556
+227  Compensaciones Creg 015  Estandar  UN  -10,066.00  Excluido  10,066  0
+197  111  Interes Impuesto A.P  Mandato  UN  11.00  Excluido  11
+571  Impuesto A. Publico  Mandato  UN  15,816.00  Excluido  15,816
+561  1  Subsidio  Estandar  UN  -132,734.00  Excluido  -132,734
+123456789012345S7892  Código  Cant.  Descripción  Tipo operación  Unidad medida  Valor unitario  Impuesto  Valor impuesto  Descuento  Valor sin IVA
+TOTAL MES  $296  $10,066  $193,217
+Total base antes de IVA:  $193,217  Total IVA: $296  Otros:  Total descuentos:$10,066  Total a pagar:  $183,447
+### PARTE 4
+SERVICIOS QUE RECIBES DE OTRAS ENTIDADES*
+IMPUESTO DE ALUMBRADO PÚBLICO*
+Servicio prestado por: ALCALDIA CARTAGo
+Acuerdo del Concejo Municipal:025 de 2024 (27 dic 2024)Oficina de atención al ciudadano: Cll 8 No. 5 - 68  Tel: 6022114118  Saldo anterior: 0
+业  CLIENTE  PERIODO FACTURADO  ID DE COBROS  cÓDIGo  PAGO OPORTUNO
+CELSIA  14/JUL/2026-12/SEP/2026  2026/10/02  oaae
+CELSIA COLOMBIA S.A  Factura electrónica de venta:
+E.S.P  VALOR  $183,447
+NIT.800.249.860-1  A PAGAR:

@@ -12,7 +12,7 @@ import ConsumoForm from "./components/ConsumoForm";
 import ConsumoScreen from "./components/ConsumoScreen";
 import HogarForm from "./components/HogarForm";
 import HomeScreen from "./components/HomeScreen";
-import InvoiceScanner, { type MetodoLectura } from "./components/InvoiceScanner";
+import InvoiceScanner, { MARCA_ELIGIENDO, type MetodoLectura } from "./components/InvoiceScanner";
 import MetaScreen from "./components/MetaScreen";
 import Pantalla from "./components/Pantalla";
 import ProgresoScreen from "./components/ProgresoScreen";
@@ -45,6 +45,22 @@ export default function App() {
   const [lectura, setLectura] = useState<{ resultado: ResultadoLectura; metodo: MetodoLectura } | null>(null);
   const [error, setError] = useState("");
   const [aviso, setAviso] = useState("");
+  const [recargada, setRecargada] = useState(false);
+
+  // iPhone: si Safari recargó la página mientras la cámara estaba abierta,
+  // se vuelve a "Leer factura" (y no a Inicio, como si nada hubiera pasado).
+  useEffect(() => {
+    try {
+      const marca = Number(sessionStorage.getItem(MARCA_ELIGIENDO));
+      sessionStorage.removeItem(MARCA_ELIGIENDO);
+      if (marca && Date.now() - marca < 15 * 60 * 1000) {
+        setVista("factura");
+        setRecargada(true);
+      }
+    } catch {
+      /* sin almacenamiento */
+    }
+  }, []);
 
   // ---------- Sesión ----------
   useEffect(() => {
@@ -105,6 +121,7 @@ export default function App() {
 
   const ir = (v: Vista) => {
     setVista(v);
+    setRecargada(false);
     setError("");
     window.scrollTo({ top: 0 });
   };
@@ -165,6 +182,7 @@ export default function App() {
       return (
         <Pantalla titulo="Leer factura" icono="📷" onVolver={() => ir("consumo")} pie={nav}>
           <InvoiceScanner
+            recargada={recargada}
             onUsar={(resultado, metodo) => {
               setLectura({ resultado, metodo });
               ir("formulario");

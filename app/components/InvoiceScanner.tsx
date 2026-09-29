@@ -27,9 +27,33 @@ function Aviso({ aviso }: { aviso: AvisoLectura }) {
   );
 }
 
-type Props = { onUsar: (lectura: ResultadoLectura, metodo: MetodoLectura) => void };
+type Props = {
+  onUsar: (lectura: ResultadoLectura, metodo: MetodoLectura) => void;
+  /** La página se recargó mientras la persona elegía la foto (pasa en iPhone). */
+  recargada?: boolean;
+};
 
-export default function InvoiceScanner({ onUsar }: Props) {
+/**
+ * Marca "eligiendo foto". Si el celular recarga la página mientras la cámara
+ * está abierta, al volver la app regresa a esta pantalla en vez de a Inicio.
+ */
+export const MARCA_ELIGIENDO = "electricos-eligiendo-foto";
+const marcar = () => {
+  try {
+    sessionStorage.setItem(MARCA_ELIGIENDO, String(Date.now()));
+  } catch {
+    /* navegación privada: no pasa nada */
+  }
+};
+const desmarcar = () => {
+  try {
+    sessionStorage.removeItem(MARCA_ELIGIENDO);
+  } catch {
+    /* sin almacenamiento */
+  }
+};
+
+export default function InvoiceScanner({ onUsar, recargada = false }: Props) {
   const [archivo, setArchivo] = useState<File | null>(null);
   const [vistaPrevia, setVistaPrevia] = useState("");
   const [estado, setEstado] = useState("");
@@ -110,6 +134,7 @@ export default function InvoiceScanner({ onUsar }: Props) {
     } catch (e) {
       setError((e as Error).message || "No fue posible leer la factura. Puedes ingresar los datos a mano.");
     } finally {
+      desmarcar();
       setLeyendo(false);
       setEstado("");
     }
@@ -118,6 +143,7 @@ export default function InvoiceScanner({ onUsar }: Props) {
   const elegirArchivo = (sumar: boolean) => (event: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files ?? []);
     event.target.value = ""; // permite volver a elegir el mismo archivo
+    if (!files.length) desmarcar();
     if (!sumar) setLectura(null);
     void leerArchivos(files, sumar);
   };
@@ -183,20 +209,30 @@ export default function InvoiceScanner({ onUsar }: Props) {
         <p>Funciona con Energía de Pereira, CHEC, Celsia, EPM y otras. ElectriCOs propone los datos y tú los confirmas.</p>
       </div>
 
+      {recargada && !lectura && !leyendo && (
+        <div className="info-note" role="status">
+          <strong>Vuelve a elegir la foto</strong>
+          <span>
+            El celular recargó la página mientras elegías o leías la foto (le faltó memoria). Elígela otra vez. Si vuelve a pasar, cierra
+            otras pestañas y apps, toma la foto con la cámara normal del celular y súbela desde <b>Galería</b>, o tómala por partes.
+          </span>
+        </div>
+      )}
+
       <section className="scanner-card">
         <div className={"fuente-grid" + (leyendo ? " is-disabled" : "")}>
           <label className="fuente-boton">
-            <input type="file" accept="image/*" capture="environment" onChange={elegirArchivo(false)} disabled={leyendo} />
+            <input type="file" accept="image/*" capture="environment" onClick={marcar} onChange={elegirArchivo(false)} disabled={leyendo} />
             <span aria-hidden="true">📷</span>
             <strong>Tomar foto</strong>
           </label>
           <label className="fuente-boton">
-            <input type="file" accept="image/*" multiple onChange={elegirArchivo(false)} disabled={leyendo} />
+            <input type="file" accept="image/*" multiple onClick={marcar} onChange={elegirArchivo(false)} disabled={leyendo} />
             <span aria-hidden="true">🖼️</span>
             <strong>Galería</strong>
           </label>
           <label className="fuente-boton">
-            <input type="file" accept="application/pdf,.pdf" onChange={elegirArchivo(false)} disabled={leyendo} />
+            <input type="file" accept="application/pdf,.pdf" onClick={marcar} onChange={elegirArchivo(false)} disabled={leyendo} />
             <span aria-hidden="true">📄</span>
             <strong>PDF</strong>
           </label>
@@ -320,7 +356,7 @@ export default function InvoiceScanner({ onUsar }: Props) {
 
         {vistaPrevia && lectura && !leyendo && !guiaAbierta && (
           <label className="secondary-button full-button boton-archivo">
-            <input type="file" accept="image/*" multiple onChange={elegirArchivo(true)} />
+            <input type="file" accept="image/*" multiple onClick={marcar} onChange={elegirArchivo(true)} />
             ➕ Agregar otra parte de la factura (foto){partes > 1 ? ` · ${partes} partes leídas` : ""}
           </label>
         )}

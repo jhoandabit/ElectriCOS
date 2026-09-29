@@ -261,3 +261,33 @@ test("barras ilegibles (0 kWh) se quitan antes de compararlas con el consumo", (
   assert.ok(avisos.some((a) => a.campo === "historico" && /No se pudo leer 4 meses/.test(a.mensaje)));
   assert.ok(!avisos.some((a) => /muy distinto del promedio/.test(a.mensaje)), "los ceros no bajan el promedio");
 });
+
+test("Celsia en fotos por partes: cada parte aporta lo suyo y juntas dan la factura completa", () => {
+  const partes = readFileSync(new URL("./fixtures/celsia-ocr-partes.txt", import.meta.url), "utf8")
+    .split(/^### PARTE \d\n/m)
+    .filter((p) => p.trim());
+  assert.equal(partes.length, 4);
+
+  // Solo el encabezado: estrato y municipio, pero no el consumo.
+  const encabezado = validarYCompletar(extraerDeTexto(partes[0])).datos;
+  assert.equal(encabezado.estrato, 2);
+  assert.equal(encabezado.municipio, "Cartago");
+  assert.equal(encabezado.consumoKwh, null);
+
+  // Las cuatro partes juntas (en cualquier orden).
+  for (const orden of [[0, 1, 2, 3], [3, 2, 1, 0], [1, 0, 3, 2]]) {
+    const { datos } = validarYCompletar(extraerDeTexto(orden.map((i) => partes[i]).join("\n")));
+    assert.equal(datos.consumoKwh, 314);
+    assert.equal(datos.lecturaAnterior, 24605);
+    assert.equal(datos.lecturaActual, 24919);
+    assert.equal(datos.diasFacturados, 61);
+    assert.equal(datos.periodo, "2026-09");
+    assert.equal(datos.estrato, 2);
+    assert.equal(datos.municipio, "Cartago");
+    assert.equal(datos.valorKwh, 981.92);
+    assert.deepEqual(
+      datos.historico.map((p) => `${p.periodo}:${p.kwh}`),
+      ["2025-09:119", "2025-11:112", "2026-01:121", "2026-03:153", "2026-05:129", "2026-07:544"]
+    );
+  }
+});

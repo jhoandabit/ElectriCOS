@@ -1476,3 +1476,39 @@ button:disabled {
   opacity: 0;
   cursor: pointer;
 }
+
+/* Confirmación de borrado dentro de la lista (instantánea, sin aviso del navegador) */
+.historial li.por-borrar {
+  border-color: #e7b9a0;
+  background: var(--soft);
+}
+.historial li > .confirmar-borrar {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 8px;
+}
+.secondary-button.chico,
+.peligro-button.chico {
+  min-height: 38px;
+  padding: 0 14px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 700;
+}
+.peligro-button {
+  border: 0;
+  background: #b3261e;
+  color: #fff;
+  cursor: pointer;
+}
+.confirmar-meta {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 16px;
+  background: var(--soft);
+}
+.confirmar-meta p {
+  margin: 0;
+  font-weight: 700;
+}

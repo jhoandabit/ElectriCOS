@@ -84,21 +84,22 @@ export function validarYCompletar(entrada: DatosFactura): {
     .filter((p) => /^20\d{2}-(0[1-9]|1[0-2])$/.test(p.periodo) && p.kwh >= 0 && p.kwh < KWH_MAX)
     .sort((a, b) => a.periodo.localeCompare(b.periodo));
 
+  // Las barras del gráfico que no se pudieron leer llegan en 0.
+  const ilegibles = datos.historico.filter((p) => p.kwh === 0).length;
+  if (ilegibles) {
+    datos.historico = datos.historico.filter((p) => p.kwh > 0);
+    avisos.push({
+      nivel: "revisar",
+      campo: "historico",
+      mensaje: `No se pudo leer ${ilegibles === 1 ? "1 mes" : `${ilegibles} meses`} del gráfico de consumos. Puedes escribirlos al guardar.`,
+    });
+  }
+
   // En fotos, el OCR puede "inventar" un mes con números de otra parte de la
   // factura (p. ej. "AGO-2026 24"). Un mes del mismo hogar rara vez es menos
   // de la quinta parte ni más de 5 veces el consumo actual: esos se descartan.
   if (datos.consumoKwh !== null && datos.consumoKwh > 0) {
     const actual = datos.consumoKwh;
-    // Las barras del gráfico que no se pudieron leer llegan en 0.
-    const ilegibles = datos.historico.filter((p) => p.kwh === 0).length;
-    if (ilegibles) {
-      datos.historico = datos.historico.filter((p) => p.kwh > 0);
-      avisos.push({
-        nivel: "revisar",
-        campo: "historico",
-        mensaje: `No se pudo leer ${ilegibles === 1 ? "1 mes" : `${ilegibles} meses`} del gráfico de consumos. Puedes escribirlos al guardar.`,
-      });
-    }
     const antes = datos.historico.length;
     datos.historico = datos.historico.filter((p) => p.kwh >= actual / 5 && p.kwh <= actual * 5);
     if (datos.historico.length < antes) {

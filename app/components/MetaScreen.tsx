@@ -31,6 +31,7 @@ export default function MetaScreen({ hogar, registros, meta, parametros, onCambi
   const [acciones, setAcciones] = useState<string[]>([]);
   const [error, setError] = useState("");
   const [ocupado, setOcupado] = useState(false);
+  const [porCerrar, setPorCerrar] = useState<"cumplida" | "cerrada" | null>(null);
   const factor = parametros.factor_emision_sin.valor;
 
   const ejecutar = async (tarea: () => Promise<void>) => {
@@ -56,8 +57,8 @@ export default function MetaScreen({ hogar, registros, meta, parametros, onCambi
       void ejecutar(() => actualizarAccionesHechas(meta.id, hechas));
     };
     const cerrar = (estado: "cumplida" | "cerrada") => {
-      const texto = estado === "cumplida" ? "¿Marcar la meta como cumplida?" : "¿Cerrar la meta sin cumplirla? Luego podrás proponer otra.";
-      if (window.confirm(texto)) void ejecutar(() => cerrarMeta(meta.id, estado));
+      setPorCerrar(null);
+      void ejecutar(() => cerrarMeta(meta.id, estado));
     };
 
     return (
@@ -90,10 +91,24 @@ export default function MetaScreen({ hogar, registros, meta, parametros, onCambi
             </span>
           </div>
           {error && <div className="error-message" role="alert">{error}</div>}
-          <div className="button-row">
-            <button className="secondary-button" onClick={() => cerrar("cerrada")} disabled={ocupado}>Cerrar meta</button>
-            <button className="primary-button" onClick={() => cerrar("cumplida")} disabled={ocupado}>¡La cumplimos!</button>
-          </div>
+          {porCerrar ? (
+            <div className="confirmar-meta" role="alertdialog" aria-label="Confirmar">
+              <p>
+                {porCerrar === "cumplida"
+                  ? "¿Marcar la meta como cumplida?"
+                  : "¿Cerrar la meta sin cumplirla? Luego podrás proponer otra."}
+              </p>
+              <div className="button-row">
+                <button className="secondary-button" onClick={() => setPorCerrar(null)} disabled={ocupado}>No</button>
+                <button className="primary-button" onClick={() => cerrar(porCerrar)} disabled={ocupado}>Sí</button>
+              </div>
+            </div>
+          ) : (
+            <div className="button-row">
+              <button className="secondary-button" onClick={() => setPorCerrar("cerrada")} disabled={ocupado}>Cerrar meta</button>
+              <button className="primary-button" onClick={() => setPorCerrar("cumplida")} disabled={ocupado}>¡La cumplimos!</button>
+            </div>
+          )}
         </section>
       </>
     );

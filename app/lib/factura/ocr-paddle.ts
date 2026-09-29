@@ -18,6 +18,16 @@ const MODELO_RECONOCIMIENTO = "PP-OCRv6_tiny_rec";
 
 let instancia: Promise<Ocr> | null = null;
 
+/**
+ * iPhone / iPad (cualquier navegador: todos usan el motor de Safari).
+ * Safari da poca memoria a cada pestaña: si se pasa, la cierra ("No se puede
+ * abrir esta página") o la recarga al volver de la cámara.
+ */
+export function esIOS() {
+  if (typeof navigator === "undefined") return false;
+  return /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+}
+
 /** Usa los modelos servidos desde nuestro dominio; si no están, los oficiales. */
 async function rutaModelo(nombre: string) {
   const local = `/modelos/${nombre}_onnx_infer.tar`;
@@ -41,7 +51,9 @@ export function cargarLector(): Promise<Ocr> {
       ...(det ? { textDetectionModelAsset: det } : {}),
       ...(rec ? { textRecognitionModelAsset: rec } : {}),
       worker: true, // en segundo plano: la pantalla no se congela
-      ortOptions: { backend: "auto", wasmPaths: "/ort/" }, // WebGPU si existe; si no, WebAssembly
+      // WebGPU si existe; si no, WebAssembly. En iPhone, siempre WebAssembly:
+      // WebGPU de Safari reserva mucha memoria y la pestaña se cae.
+      ortOptions: esIOS() ? { backend: "wasm", numThreads: 1, wasmPaths: "/ort/" } : { backend: "auto", wasmPaths: "/ort/" },
     });
     return ocr as unknown as Ocr;
   })().catch((e) => {
@@ -51,8 +63,13 @@ export function cargarLector(): Promise<Ocr> {
   return instancia;
 }
 
-/** Empieza a cargar el lector sin esperar (al abrir la pantalla de factura). */
+/**
+ * Empieza a cargar el lector sin esperar (al abrir la pantalla de factura).
+ * En iPhone NO: con el lector en memoria, Safari cierra la página mientras
+ * la cámara está abierta y al volver la recarga (se pierde la foto).
+ */
 export function precargarLector() {
+  if (esIOS()) return;
   void cargarLector().catch(() => undefined);
 }
 

@@ -3,7 +3,13 @@
 // Lectura de archivos en el navegador: texto de PDFs, render de páginas
 // y fotos redimensionadas para el lector de texto. Nada sale del celular.
 
-const LADO_MAXIMO = 2000; // px: suficiente para leer una factura, liviano para subir
+// px: suficiente para leer una factura. En iPhone un poco menos, porque Safari
+// da poca memoria por pestaña (una foto de 2000 px ya ocupa ≈ 12 MB sin comprimir).
+const esIOS = () =>
+  typeof navigator !== "undefined" &&
+  (/iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1));
+const LADO_MAXIMO = 2000;
+const LADO_MAXIMO_IOS = 1700;
 
 export function esPdf(archivo: File) {
   return archivo.type === "application/pdf" || archivo.name.toLowerCase().endsWith(".pdf");
@@ -37,8 +43,9 @@ export function dimensiones(imagen: ImageBitmap | HTMLImageElement) {
 /** Reduce la foto (por defecto a máx. 2000 px) y la dibuja en un lienzo. */
 export async function prepararFoto(
   archivo: File,
-  ladoMaximo = LADO_MAXIMO
+  ladoPedido = LADO_MAXIMO
 ): Promise<{ canvas: HTMLCanvasElement }> {
+  const ladoMaximo = esIOS() ? Math.min(ladoPedido, LADO_MAXIMO_IOS) : ladoPedido;
   const imagen = await cargarImagen(archivo);
   const { ancho, alto } = dimensiones(imagen);
   const escala = Math.min(1, ladoMaximo / Math.max(ancho, alto));
@@ -50,6 +57,8 @@ export async function prepararFoto(
   if (!ctx) throw new Error("No se pudo preparar la imagen.");
   ctx.imageSmoothingQuality = "high";
   ctx.drawImage(imagen, 0, 0, canvas.width, canvas.height);
+  // La foto original (12 MP en un iPhone ≈ 48 MB) se suelta de inmediato.
+  if ("close" in imagen) imagen.close();
 
   return { canvas };
 }

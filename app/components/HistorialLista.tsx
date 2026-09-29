@@ -11,10 +11,12 @@ const FUENTE: Record<RegistroConsumo["fuente"], string> = { factura: "Factura", 
 
 export default function HistorialLista({ registros, onCambio }: { registros: RegistroConsumo[]; onCambio: () => Promise<void> }) {
   const [borrando, setBorrando] = useState<string | null>(null);
+  // Confirmación dentro de la lista (el aviso del navegador tarda en iPhone).
+  const [confirmar, setConfirmar] = useState<string | null>(null);
   const [error, setError] = useState("");
 
   const borrar = async (r: RegistroConsumo) => {
-    if (!window.confirm(`¿Borrar el consumo de ${nombreMes(r.periodo)}?`)) return;
+    setConfirmar(null);
     setBorrando(r.id);
     setError("");
     try {
@@ -37,18 +39,38 @@ export default function HistorialLista({ registros, onCambio }: { registros: Reg
       </div>
       <ul>
         {[...registros].reverse().map((r) => (
-          <li key={r.id}>
-            <div>
-              <strong>{nombreMes(r.periodo)}</strong>
-              <small>
-                {FUENTE[r.fuente]}
-                {r.dias ? ` · ${r.dias} días · ${co(redondear(kwhMesNormalizado({ periodo: r.periodo, kwh: r.consumo_kwh, dias: r.dias })))} kWh en 30 días` : ""}
-              </small>
-            </div>
-            <b>{co(redondear(r.consumo_kwh))} kWh</b>
-            <button className="icon-button chico" aria-label={`Borrar ${nombreMes(r.periodo)}`} onClick={() => borrar(r)} disabled={borrando === r.id}>
-              ✕
-            </button>
+          <li key={r.id} className={confirmar === r.id ? "por-borrar" : undefined}>
+            {confirmar === r.id ? (
+              <>
+                <div>
+                  <strong>¿Borrar {nombreMes(r.periodo)}?</strong>
+                  <small>{co(redondear(r.consumo_kwh))} kWh · no se puede deshacer</small>
+                </div>
+                <div className="confirmar-borrar">
+                  <button className="secondary-button chico" onClick={() => setConfirmar(null)}>No</button>
+                  <button className="peligro-button chico" onClick={() => borrar(r)}>Sí, borrar</button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div>
+                  <strong>{nombreMes(r.periodo)}</strong>
+                  <small>
+                    {FUENTE[r.fuente]}
+                    {r.dias ? ` · ${r.dias} días · ${co(redondear(kwhMesNormalizado({ periodo: r.periodo, kwh: r.consumo_kwh, dias: r.dias })))} kWh en 30 días` : ""}
+                  </small>
+                </div>
+                <b>{co(redondear(r.consumo_kwh))} kWh</b>
+                <button
+                  className="icon-button chico"
+                  aria-label={`Borrar ${nombreMes(r.periodo)}`}
+                  onClick={() => setConfirmar(r.id)}
+                  disabled={borrando === r.id}
+                >
+                  {borrando === r.id ? "…" : "✕"}
+                </button>
+              </>
+            )}
           </li>
         ))}
       </ul>
