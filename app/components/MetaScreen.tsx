@@ -107,12 +107,15 @@ export default function MetaScreen({ hogar, registros, meta, parametros, onCambi
       <>
         <div className="intro-card">
           <span className="section-kicker">LÍNEA BASE</span>
-          <h2>Faltan {faltan} {faltan === 1 ? "mes" : "meses"} de consumo.</h2>
+          <h2>Faltan {faltan} {faltan === 1 ? "mes" : "meses"} de consumo para proponer una meta.</h2>
           <p>
-            Una meta se mide contra tu consumo habitual. Con menos de {MESES_MINIMOS_LINEA_BASE} meses, un solo mes raro cambiaría todo
-            el promedio.
+            Para saber si tu casa está ahorrando, primero hay que conocer cuánto consume normalmente: el <b>promedio</b> de al menos{" "}
+            {MESES_MINIMOS_LINEA_BASE} meses. Con uno o dos, un solo mes raro (visitas, vacaciones) cambiaría todo.
           </p>
-          <p>Consejo: al leer una factura, agrega también los meses anteriores que trae impresos.</p>
+          <p>
+            <b>La forma más rápida:</b> vuelve a leer tu factura. Casi todas traen impresos los últimos 6 meses (kWh y días), y ElectriCOs los
+            guarda junto con el mes actual.
+          </p>
         </div>
         <button className="primary-button full-button" onClick={onRegistrar}>Registrar consumo</button>
       </>

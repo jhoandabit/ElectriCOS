@@ -187,14 +187,20 @@ Si la app no encuentra el consumo en una foto, ofrece la **lectura guiada**: con
 
 ## 3.5 El resultado del mes
 
-Al guardar, ElectriCOs muestra el **diagnóstico**:
+Al guardar, ElectriCOs muestra seis tarjetas. Cada una responde **una pregunta**, con el número grande, qué significa y la cuenta que lo produjo:
 
-- Consumo del mes y consumo llevado a 30 días.
-- Huella de carbono (kg CO₂e), total y por persona.
-- Comparación con el promedio del hogar y con la subsistencia.
-- Recomendaciones según los resultados.
+| Tarjeta | Ejemplo (factura de referencia) | Qué explica |
+|---|---|---|
+| ⚡ ¿Cuánta energía usó tu casa? | 353 kWh en 28 días · 12,6 kWh por día | Qué es un kWh, la resta del contador y el ajuste a 30 días (378,2 kWh) |
+| 💵 ¿Cuánto costó esa energía? | $319.484 · unos $11.410 por día | 353 × $905; aclara que la factura también cobra alumbrado, aseo, etc. |
+| 🌎 ¿Cuánta contaminación produjo? | 77,7 kg de CO₂ · casi lo que pesa una persona adulta | Qué es el CO₂ y de dónde sale el 0,22 |
+| 👨‍👩‍👧 ¿Cuánto le toca a cada persona? | 88,3 kWh y 19,4 kg de CO₂ por persona | El reparto entre quienes viven en la casa |
+| 🏠 ¿Es mucho o poco? | 205 kWh más que lo básico · 2,2 veces | Barra "lo básico vs. tu casa", el consumo de subsistencia y el subsidio según el estrato |
+| 📅 ¿Comparado con otros meses? | 47 % más que tu promedio de 257,1 kWh | El promedio de los meses anteriores |
 
 ## 3.6 Meta y progreso
+
+Casi todas las facturas traen impresos los **últimos 6 meses** (kWh, valor y días). Al guardar una factura, ElectriCOs muestra esa tabla y, si la casilla "Guardar también estos meses" está marcada (viene marcada), los guarda. Así la familia tiene su promedio desde el primer día.
 
 Con **3 meses o más** registrados, en la pestaña **Meta**:
 
@@ -250,16 +256,16 @@ Es el **promedio de los últimos meses** (mínimo 3, máximo 6), cada mes llevad
 | Mes | kWh | Días | kWh en 30 días |
 |---|---|---|---|
 | Marzo | 207 | 31 | 200,3 |
-| Abril | 178 | 31 | 172,3 |
-| Mayo | 256 | 30 | 256,0 |
-| Junio | 280 | 32 | 262,5 |
-| Julio | 268 | 30 | 268,0 |
+| Abril | 178 | 30 | 178,0 |
+| Mayo | 256 | 31 | 247,7 |
+| Junio | 280 | 30 | 280,0 |
+| Julio | 268 | 31 | 259,4 |
 | Agosto | 415 | 33 | 377,3 |
 
-- **Promedio (línea base)**: (200,3 + 172,3 + 256,0 + 262,5 + 268,0 + 377,3) ÷ 6 = **256,1 kWh**.
-- **Mínimo y máximo**: 172,3 y 377,3 kWh.
-- **Desviación estándar**: 70,7 kWh. Mide qué tanto se alejan los meses del promedio. **Variación**: 70,7 ÷ 256,1 = 27,6 %.
-- **Tendencia**: +33,7 kWh por mes. Es la pendiente de la recta que mejor se ajusta a los puntos (mínimos cuadrados). Si es positiva, el consumo viene subiendo.
+- **Promedio (línea base)**: (200,3 + 178,0 + 247,7 + 280,0 + 259,4 + 377,3) ÷ 6 = **257,1 kWh**.
+- **Mínimo y máximo**: 178,0 y 377,3 kWh.
+- **Desviación estándar**: 70,1 kWh. Mide qué tanto se alejan los meses del promedio. **Variación**: 70,1 ÷ 257,1 = 27,3 %.
+- **Tendencia**: +33,2 kWh por mes. Es la pendiente de la recta que mejor se ajusta a los puntos (mínimos cuadrados). Si es positiva, el consumo viene subiendo.
 
 ¿Por qué mínimo 3 meses? Con 1 o 2, un mes raro (vacaciones, visitas) mueve demasiado el promedio.
 
@@ -269,7 +275,7 @@ Es el **promedio de los últimos meses** (mínimo 3, máximo 6), cada mes llevad
 meta = línea base × (1 − porcentaje ÷ 100)
 :::
 
-Con una reducción del 10 %: 256,1 × 0,9 = **230,5 kWh** al mes (en 30 días).
+Con una reducción del 10 %: 257,1 × 0,9 = **231,4 kWh** al mes (en 30 días).
 
 ## 4.6 El avance
 
@@ -280,14 +286,14 @@ Cada mes desde que empieza la meta:
 - **CO₂ evitado** = ahorro × 0,220.
 - **Dinero aproximado** = ahorro × valor del kWh.
 
-Ejemplo: si en octubre el consumo en 30 días fuera 225 kWh → cumple (225 ≤ 230,5). Ahorro = 256,1 − 225 = 31,1 kWh → 6,8 kg CO₂e → unos $28 000 (a $905 el kWh).
+Ejemplo: si en octubre el consumo en 30 días fuera 225 kWh → cumple (225 ≤ 231,4). Ahorro = 257,1 − 225 = 32,1 kWh → 7,1 kg CO₂e → unos $29 000 (a $905 el kWh).
 
 ::: {.ejercicio}
 **Compruebo lo que aprendí (capítulo 4)**
 
 1. Una factura de 310 kWh en 31 días: ¿cuánto es en 30 días?
 2. Un hogar tiene línea base de 200 kWh y elige reducir 5 %. ¿Cuál es la meta?
-3. Si septiembre, en 30 días, fue 378,2 kWh y la línea base es 256,1 kWh, ¿en qué porcentaje está por encima?
+3. Si septiembre, en 30 días, fue 378,2 kWh y la línea base es 257,1 kWh, ¿en qué porcentaje está por encima?
 4. ¿Por qué no se comparan directamente 353 kWh en 28 días con 415 kWh en 33 días?
 :::
 
@@ -482,8 +488,8 @@ Una **base de datos** es como un cuaderno con varias hojas de cálculo relaciona
 | `consumption_records` (consumos) | Un consumo por mes | septiembre 2026 · 353 kWh · 28 días |
 | `invoices` (facturas leídas) | Qué leyó la app y qué confirmó la persona | método: foto · confianza 95 |
 | `energy_parameters` (parámetros) | Valores oficiales | factor de emisión 0,220 · UPME 2024 |
-| `baselines` (líneas base) | Promedios usados para metas | 256,1 kWh · marzo a agosto |
-| `reduction_goals` (metas) | Metas y acciones | 10 % · 230,5 kWh · 3 acciones |
+| `baselines` (líneas base) | Promedios usados para metas | 257,1 kWh · marzo a agosto |
+| `reduction_goals` (metas) | Metas y acciones | 10 % · 231,4 kWh · 3 acciones |
 
 **Reglas que cuida la propia base de datos:**
 
@@ -634,7 +640,7 @@ Vista para la docente con el resumen del curso, registro de electrodomésticos, 
 
 **Capítulo 3.** (1) El PDF ya trae el texto escrito; la foto hay que "leerla" y puede estar borrosa. (2) Revisar la factura y escribir los días correctos si aparecen. (3) Por privacidad: los usuarios son menores de edad y una dirección identifica a la familia. (4) Tres.
 
-**Capítulo 4.** (1) 310 ÷ 31 × 30 = 300 kWh. (2) 200 × 0,95 = 190 kWh. (3) (378,2 − 256,1) ÷ 256,1 × 100 ≈ 47,7 %. (4) Porque tienen distinto número de días; hay que llevarlos a 30: 378,2 y 377,3 kWh, casi iguales.
+**Capítulo 4.** (1) 310 ÷ 31 × 30 = 300 kWh. (2) 200 × 0,95 = 190 kWh. (3) (378,2 − 257,1) ÷ 257,1 × 100 ≈ 47,1 %. (4) Porque tienen distinto número de días; hay que llevarlos a 30: 378,2 y 377,3 kWh, casi iguales.
 
 **Capítulo 5.** (1) Guardar los datos, como la despensa y el archivo de pedidos. (2) Guarda la historia de cada cambio: quién, cuándo y por qué. (3) Medidor → factura → PDF/foto → lector → validación → confirmación → base de datos → cálculo → consulta.
 

@@ -57,6 +57,9 @@ export default function ConsumoForm({ hogar, registros, parametros, lectura, met
   const [guardadoMes, setGuardadoMes] = useState<string | null>(null);
   const [avisoTraza, setAvisoTraza] = useState("");
   const [importados, setImportados] = useState<number | null>(null);
+  // Por defecto se guardan también los meses anteriores que trae la factura:
+  // así la familia tiene su promedio (línea base) desde el primer día.
+  const [conHistorico, setConHistorico] = useState(true);
 
   const set = (k: keyof Campos, v: string) => {
     setC((x) => ({ ...x, [k]: v }));
@@ -75,7 +78,7 @@ export default function ConsumoForm({ hogar, registros, parametros, lectura, met
   const existeMes = registros.some((r) => r.periodo === c.periodo);
   const d = lectura?.datos;
   const hogarDistinto = d && ((d.estrato && d.estrato !== hogar.estrato) || (d.municipio && d.municipio.toLowerCase() !== hogar.municipio.toLowerCase()));
-  const historicoNuevo = (d?.historico ?? []).filter((p) => !registros.some((r) => r.periodo === p.periodo) && p.periodo !== c.periodo);
+  const historicoNuevo = (d?.historico ?? []).filter((p) => p.periodo < c.periodo && !registros.some((r) => r.periodo === p.periodo));
 
   const enviar = async (e: FormEvent) => {
     e.preventDefault();
@@ -105,6 +108,14 @@ export default function ConsumoForm({ hogar, registros, parametros, lectura, met
         await registrarFactura(hogar.id, id, metodo ?? lectura.fuente, lectura.confianzaConsumo, lectura.datos, nuevo).catch(() =>
           setAvisoTraza("El consumo se guardó, pero no la traza de la lectura.")
         );
+      }
+      if (conHistorico && historicoNuevo.length) {
+        // Tampoco bloquea: si falla, se puede reintentar con el botón de después.
+        try {
+          setImportados(await importarHistorico(hogar.id, historicoNuevo));
+        } catch {
+          setAvisoTraza("El consumo se guardó, pero no los meses anteriores. Puedes intentarlo de nuevo abajo.");
+        }
       }
       await onGuardado();
       setGuardadoMes(c.periodo);
@@ -160,7 +171,10 @@ export default function ConsumoForm({ hogar, registros, parametros, lectura, met
           </section>
         )}
         {importados !== null && (
-          <div className="calculated-note"><strong>{importados} meses agregados</strong><span>Ya puedes ver tu línea base en Meta y Progreso.</span></div>
+          <div className="calculated-note">
+            <strong>{importados} {importados === 1 ? "mes anterior agregado" : "meses anteriores agregados"} desde la factura</strong>
+            <span>Con ellos ElectriCOs calcula tu promedio y ya puedes proponer una meta en la pestaña Meta.</span>
+          </div>
         )}
 
         {hogarDistinto && (
@@ -221,6 +235,30 @@ export default function ConsumoForm({ hogar, registros, parametros, lectura, met
           </label>
         </div>
       </div>
+
+      {historicoNuevo.length > 0 && (
+        <div className="form-section historico-factura">
+          <h3>Meses anteriores que trae la factura</h3>
+          <p className="field-help">
+            La factura imprime el consumo de los meses pasados. Si los guardas, ElectriCOs calcula tu promedio de una vez y no tienes que
+            esperar 3 meses para proponer una meta.
+          </p>
+          <table>
+            <thead>
+              <tr><th>Mes</th><th>kWh</th><th>Días</th></tr>
+            </thead>
+            <tbody>
+              {historicoNuevo.map((p) => (
+                <tr key={p.periodo}><td>{nombreMes(p.periodo)}</td><td>{p.kwh}</td><td>{p.dias ?? "—"}</td></tr>
+              ))}
+            </tbody>
+          </table>
+          <label className="check-row">
+            <input type="checkbox" checked={conHistorico} onChange={(e) => setConHistorico(e.target.checked)} />
+            <span>Guardar también estos {historicoNuevo.length} meses (recomendado)</span>
+          </label>
+        </div>
+      )}
 
       {error && <div className="error-message" role="alert">{error}</div>}
       <button className="primary-button" type="submit" disabled={guardando}>{guardando ? "Guardando…" : "Guardar consumo"}</button>

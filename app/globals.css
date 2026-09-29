@@ -1302,3 +1302,37 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 }
+
+/* ---------- Resultado del mes explicado (para cualquier familia) ---------- */
+.explicado { display: grid; gap: 12px; }
+.dato {
+  padding: 14px;
+  border-radius: 16px;
+  background: var(--soft);
+  display: grid;
+  gap: 6px;
+}
+.dato h3 { margin: 0; font-size: 15px; color: var(--dark); }
+.dato h3 span { margin-right: 4px; }
+.dato-valor { font-size: 26px; letter-spacing: -0.02em; color: var(--fg); line-height: 1.15; }
+.dato-sub { margin: -2px 0 2px; color: var(--muted); font-size: 14px; font-weight: 600; }
+.dato p { margin: 0; font-size: 14px; line-height: 1.5; color: #33473a; }
+.dato .cuenta {
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--surface);
+  border: 1px dashed var(--border);
+  font-size: 13.5px;
+}
+.barras { display: grid; gap: 6px; margin: 4px 0; }
+.barra-fila { display: grid; grid-template-columns: 72px 1fr 44px; align-items: center; gap: 8px; font-size: 13px; }
+.barra-fila b { text-align: right; }
+.barra { height: 14px; border-radius: 7px; background: var(--surface); overflow: hidden; border: 1px solid var(--border); }
+.barra i { display: block; height: 100%; border-radius: 7px; }
+.barra-basico { background: #8fbf9f; }
+.barra-casa { background: var(--accent); }
+.barra-casa.encima { background: #d98b19; }
+.historico-factura { margin-top: 4px; }
+.historico-factura table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 6px; }
+.historico-factura th, .historico-factura td { padding: 5px 6px; border-bottom: 1px solid var(--border); text-align: left; }
+.historico-factura td:nth-child(n + 2), .historico-factura th:nth-child(n + 2) { text-align: right; }

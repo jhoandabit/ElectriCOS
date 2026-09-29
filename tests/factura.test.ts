@@ -149,3 +149,25 @@ test("el PDF sigue leyendo el periodo real, no el estimado", () => {
   assert.equal(datos.diasFacturados, 28);
   assert.equal(datos.diasEstimados, undefined);
 });
+
+test("histórico del PDF: 6 meses con kWh y días, listos para la línea base", () => {
+  const texto = readFileSync(new URL("./fixtures/eep-factura-referencia.txt", import.meta.url), "utf8");
+  const { datos } = validarYCompletar(extraerDeTexto(texto));
+  assert.deepEqual(datos.historico, [
+    { periodo: "2026-03", kwh: 207, dias: 31 },
+    { periodo: "2026-04", kwh: 178, dias: 30 },
+    { periodo: "2026-05", kwh: 256, dias: 31 },
+    { periodo: "2026-06", kwh: 280, dias: 30 },
+    { periodo: "2026-07", kwh: 268, dias: 31 },
+    { periodo: "2026-08", kwh: 415, dias: 33 },
+  ]);
+});
+
+test("histórico mal leído por OCR (\"AGO-2026 24\") se descarta con aviso", () => {
+  const texto = readFileSync(new URL("./fixtures/eep-ocr-captura-2x.txt", import.meta.url), "utf8");
+  const crudo = extraerDeTexto(texto);
+  assert.ok(crudo.historico.some((p) => p.kwh === 24)); // el error existe en la lectura…
+  const { datos, avisos } = validarYCompletar(crudo);
+  assert.equal(datos.historico.length, 0); // …pero no llega a guardarse
+  assert.ok(avisos.some((a) => a.campo === "historico"));
+});

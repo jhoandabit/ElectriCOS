@@ -115,6 +115,22 @@ export function validarYCompletar(entrada: DatosFactura): {
     .filter((p) => /^20\d{2}-(0[1-9]|1[0-2])$/.test(p.periodo) && p.kwh >= 0 && p.kwh < KWH_MAX)
     .sort((a, b) => a.periodo.localeCompare(b.periodo));
 
+  // En fotos, el OCR puede "inventar" un mes con números de otra parte de la
+  // factura (p. ej. "AGO-2026 24"). Un mes del mismo hogar rara vez es menos
+  // de la quinta parte ni más de 5 veces el consumo actual: esos se descartan.
+  if (datos.consumoKwh !== null && datos.consumoKwh > 0) {
+    const actual = datos.consumoKwh;
+    const antes = datos.historico.length;
+    datos.historico = datos.historico.filter((p) => p.kwh >= actual / 5 && p.kwh <= actual * 5);
+    if (datos.historico.length < antes) {
+      avisos.push({
+        nivel: "revisar",
+        campo: "historico",
+        mensaje: `Se descartaron ${antes - datos.historico.length} meses anteriores que no parecían bien leídos.`,
+      });
+    }
+  }
+
   // Valor del kWh: en Colombia suele estar entre 500 y 1500 pesos.
   if (datos.valorKwh !== null && (datos.valorKwh < 200 || datos.valorKwh > 3000)) {
     avisos.push({ nivel: "revisar", campo: "valorKwh", mensaje: `El valor del kWh ($${datos.valorKwh}) parece incorrecto.` });
