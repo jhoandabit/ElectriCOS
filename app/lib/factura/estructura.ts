@@ -50,6 +50,22 @@ function filaMedidor(t: string): Partial<DatosEstructura> | null {
 }
 
 /**
+ * Energía de Pereira rotula cada fila del histórico por el mes de EMISIÓN de la
+ * factura; ElectriCOs nombra el periodo por el mes en que TERMINA. Si las filas son
+ * meses seguidos y la última lleva el mismo mes que el periodo actual (p. ej. periodo
+ * 29/AGO–28/SEP, emitida en octubre, con filas ABR…SEP), esa fila no puede ser el
+ * propio mes actual: son los periodos ANTERIORES y todas se corren un mes atrás.
+ * Sin periodo conocido, o sin esa coincidencia, no se toca nada.
+ */
+function corregirRotulos(meses: number[], periodo: string | undefined): number[] {
+  if (!periodo || meses.length < 2) return meses;
+  const mesActual = Number(periodo.split("-")[1]);
+  const seguidos = meses.every((m, i) => i === 0 || (m - meses[i - 1] + 12) % 12 === 1);
+  if (!seguidos || meses[meses.length - 1] !== mesActual) return meses;
+  return meses.map((m) => (m === 1 ? 12 : m - 1));
+}
+
+/**
  * Tabla con encabezado, como la de Celsia (y muchas otras empresas):
  *   Tipo de energía  Lectura actual (kWh)  Lectura anterior (kWh)  Múltiplo  Consumo
  *   Energía Activa   24919                 24605                   1         314
@@ -97,12 +113,20 @@ function lecturasEnTabla(t: string): Partial<DatosEstructura> | null {
 function historicoEnGrafico(t: string, periodo: string | undefined): PuntoHistorico[] {
   const lineas = t.split("\n");
   for (let i = 1; i < lineas.length; i++) {
-    const meses = Array.from(lineas[i].matchAll(new RegExp(String.raw`\b(${MESES_CORTOS})\b`, "g"))).map((m) => mesDesdeTexto(m[1]) as number);
-    if (meses.length < 3 || !/\bactual\b/.test(lineas[i])) continue;
+    const mesesLeidos = Array.from(lineas[i].matchAll(new RegExp(String.raw`\b(${MESES_CORTOS})\b`, "g"))).map((m) => mesDesdeTexto(m[1]) as number);
+    // "Actual" (Celsia) o "ACT PROM" / "ACTPROM" (Energía de Pereira).
+    if (mesesLeidos.length < 3 || !/\bactual\b|\bact\s*prom/.test(lineas[i])) continue;
+    const meses = corregirRotulos(mesesLeidos, periodo);
     // Los valores están unos renglones más arriba (entre ellos puede haber otros textos).
     for (const arriba of lineas.slice(Math.max(0, i - 4), i).reverse()) {
-      const valores = Array.from(arriba.matchAll(/(\d{1,4})\s*kwh/g)).map((m) => Number(m[1]));
-      if (valores.length !== meses.length + 1) continue; // + la barra "Actual"
+      let valores = Array.from(arriba.matchAll(/(\d{1,4})\s*kwh/g)).map((m) => Number(m[1]));
+      if (valores.length !== meses.length + 1) {
+        // Energía de Pereira escribe los valores sin "kWh": seis meses + Actual (+ Promedio).
+        // (sin "lookbehind": iOS anterior a 16.4 no lo soporta y rompería la carga del módulo)
+        const sueltos = Array.from(arriba.matchAll(/(?:^|[^\d.,])(\d{2,4})(?![\d.,])/g)).map((m) => Number(m[1]));
+        if (sueltos.length !== meses.length + 1 && sueltos.length !== meses.length + 2) continue;
+        valores = sueltos.slice(0, meses.length + 1);
+      }
       const hoy = new Date();
       let [anio, mesRef] = periodo ? periodo.split("-").map(Number) : [hoy.getFullYear(), hoy.getMonth() + 1];
       const puntos: PuntoHistorico[] = [];
@@ -184,16 +208,19 @@ function totalFactura(t: string): number | null {
  * Los años se deducen hacia atrás desde el periodo actual.
  */
 function tablaHistorico(t: string, periodo: string | undefined): PuntoHistorico[] {
-  const patron = new RegExp(String.raw`\b(${MESES_CORTOS})[a-z]*\.?\s+(\d{1,4})\s+\$?[\d.,]{3,}\s+(\d{2})\b`, "g");
+  // Los días son opcionales: si el OCR pierde esa columna se asumen 30.
+  const patron = new RegExp(String.raw`\b(${MESES_CORTOS})[a-z]*\.?\s+(\d{1,4})\s+\$?[\d.,]{3,}(?:\s+(\d{2})\b)?`, "g");
   const filas: { mes: number; kwh: number; dias: number }[] = [];
   for (const m of t.matchAll(patron)) {
     const mes = mesDesdeTexto(m[1]);
     const kwh = Number(m[2]);
-    const dias = Number(m[3]);
+    const dias = m[3] ? Number(m[3]) : 30;
     if (!mes || kwh < 1 || kwh >= 3000 || dias < 15 || dias > 75) continue;
     if (!filas.some((f) => f.mes === mes)) filas.push({ mes, kwh, dias });
   }
   if (!filas.length) return [];
+  const rotulos = corregirRotulos(filas.map((f) => f.mes), periodo);
+  filas.forEach((f, i) => { f.mes = rotulos[i]; });
 
   const hoy = new Date();
   let [anio, mesRef] = periodo ? periodo.split("-").map(Number) : [hoy.getFullYear(), hoy.getMonth() + 1];
