@@ -12,6 +12,7 @@ import ConsejoEmergente, { usarConsejosActivos } from "./components/ConsejoEmerg
 import ConsumoForm from "./components/ConsumoForm";
 import ConsumoScreen from "./components/ConsumoScreen";
 import HogarForm from "./components/HogarForm";
+import InstalarApp from "./components/InstalarApp";
 import HomeScreen from "./components/HomeScreen";
 import InvoiceScanner, { MARCA_ELIGIENDO, type MetodoLectura } from "./components/InvoiceScanner";
 import MetaScreen from "./components/MetaScreen";
@@ -269,6 +270,7 @@ export default function App() {
       return (
         <Pantalla titulo="Mi hogar" icono="⌂" onVolver={() => ir("inicio")} pie={nav}>
           <HogarForm hogar={hogar} onGuardado={(h) => { setHogar(h); ir("inicio"); }} onCancelar={() => ir("inicio")} />
+          <InstalarApp />
           <label className="check-row">
             <input type="checkbox" checked={consejosActivos} onChange={(e) => setConsejosActivos(e.target.checked)} />
             <span>Mostrar consejos de ahorro mientras uso la app</span>
