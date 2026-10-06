@@ -28,7 +28,9 @@ const MUNICIPIOS_CONOCIDOS = [
   "La Unión", "Tuluá", "Buga", "Palmira", "Cali", "Jamundí", "Medellín",
 ];
 
-const NUM = String.raw`(\d{1,3}(?:[.,]\d{3})+(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,4})?)`;
+// Primero los valores con 4 decimales exactos ("905.0529", el valor del kWh): sin esto
+// se leían como "905.052" y se tomaban por miles (905 052), fuera de rango.
+const NUM = String.raw`(\d{1,4}[.,]\d{4}(?!\d)|\d{1,3}(?:[.,]\d{3})+(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,4})?)`;
 
 function primerNumeroTras(texto: string, etiqueta: RegExp, ventana = 60): number | null {
   const m = texto.match(new RegExp("(?:" + etiqueta.source + ")" + String.raw`[^\d\n]{0,25}` + `[\\s\\S]{0,${ventana}}?` + NUM, "i"));
