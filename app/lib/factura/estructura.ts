@@ -67,6 +67,49 @@ function periodoSegunHistorico(meses: number[], periodo: string | undefined): st
   return mesActual === 12 ? formatoPeriodo(anio + 1, 1) : formatoPeriodo(anio, mesActual + 1);
 }
 
+
+type FilaHistorico = PuntoHistorico & { diasLeidos: boolean; valor?: number };
+
+function diasDelMes(anio: number, mes: number): number {
+  return new Date(anio, mes, 0).getDate();
+}
+
+function mediana(xs: number[]): number | null {
+  if (!xs.length) return null;
+  const o = [...xs].sort((a, b) => a - b);
+  return o[Math.floor(o.length / 2)];
+}
+
+/**
+ * La factura trae el histórico DOS veces: en la tabla y en el gráfico de barras. Si el
+ * OCR confunde un dígito en una de las dos (256 → 216), se compara con la otra y, si no
+ * coinciden, gana el valor cuyo precio por kWh (pesos ÷ kWh) se parece más al de los
+ * meses donde ambas lecturas coinciden. Sin pesos para decidir, manda la tabla.
+ */
+function fusionarHistorico(tabla: FilaHistorico[], grafico: FilaHistorico[]): PuntoHistorico[] {
+  const porPeriodo = new Map<string, FilaHistorico>();
+  for (const f of grafico) porPeriodo.set(f.periodo, f);
+  const iguales = tabla.filter((f) => porPeriodo.get(f.periodo)?.kwh === f.kwh && f.valor).map((f) => (f.valor as number) / f.kwh);
+  const referencia = mediana(iguales) ?? mediana(tabla.filter((f) => f.valor).map((f) => (f.valor as number) / f.kwh));
+  for (const f of tabla) {
+    const g = porPeriodo.get(f.periodo);
+    if (!g) {
+      porPeriodo.set(f.periodo, f);
+      continue;
+    }
+    let kwh = f.kwh;
+    if (g.kwh !== f.kwh && f.valor && referencia) {
+      const dist = (k: number) => Math.abs((f.valor as number) / k - referencia);
+      kwh = dist(g.kwh) < dist(f.kwh) ? g.kwh : f.kwh;
+    }
+    porPeriodo.set(f.periodo, { periodo: f.periodo, kwh, dias: f.diasLeidos ? f.dias : g.dias, diasLeidos: f.diasLeidos });
+  }
+  return Array.from(porPeriodo.values())
+    .sort((a, b) => a.periodo.localeCompare(b.periodo))
+    .slice(-12)
+    .map(({ periodo, kwh, dias }) => ({ periodo, kwh, dias }));
+}
+
 /**
  * Tabla con encabezado, como la de Celsia (y muchas otras empresas):
  *   Tipo de energía  Lectura actual (kWh)  Lectura anterior (kWh)  Múltiplo  Consumo
@@ -112,7 +155,7 @@ function lecturasEnTabla(t: string): Partial<DatosEstructura> | null {
  *   SEP  NOV  ENE  MAR  MAY  JUL  Actual
  * Los días de cada periodo se deducen del salto entre meses (bimestral ≈ 61).
  */
-function historicoEnGrafico(t: string, periodo: string | undefined, ajuste?: { periodo?: string }): PuntoHistorico[] {
+function historicoEnGrafico(t: string, periodo: string | undefined, ajuste?: { periodo?: string }): FilaHistorico[] {
   const lineas = t.split("\n");
   for (let i = 1; i < lineas.length; i++) {
     const mesesLeidos = Array.from(lineas[i].matchAll(new RegExp(String.raw`\b(${MESES_CORTOS})\b`, "g"))).map((m) => mesDesdeTexto(m[1]) as number);
@@ -133,12 +176,13 @@ function historicoEnGrafico(t: string, periodo: string | undefined, ajuste?: { p
       const hoy = new Date();
       if (referencia !== periodo && ajuste) ajuste.periodo = referencia;
       let [anio, mesRef] = referencia ? referencia.split("-").map(Number) : [hoy.getFullYear(), hoy.getMonth() + 1];
-      const puntos: PuntoHistorico[] = [];
+      const puntos: FilaHistorico[] = [];
       for (let k = meses.length - 1; k >= 0; k--) {
         const mes = meses[k];
         if (mes >= mesRef) anio -= 1;
         const salto = (mesRef - mes + 12) % 12 || 12;
-        puntos.unshift({ periodo: formatoPeriodo(anio, mes), kwh: valores[k], dias: Math.round(salto * 30.4) });
+        // Meses seguidos: los días del mes calendario (30, 31, 30, 31, 31, 30…); bimestral ≈ 61.
+        puntos.unshift({ periodo: formatoPeriodo(anio, mes), kwh: valores[k], dias: salto === 1 ? diasDelMes(anio, mes) : Math.round(salto * 30.4), diasLeidos: false });
         mesRef = mes;
       }
       // El primer punto no tiene anterior: se le asigna el mismo salto que al segundo.
@@ -214,16 +258,17 @@ function totalFactura(t: string): number | null {
  * Tabla de consumos: "MAR  207  162,374  31" (mes, kWh, pesos, días).
  * Los años se deducen hacia atrás desde el periodo actual.
  */
-function tablaHistorico(t: string, periodo: string | undefined, ajuste?: { periodo?: string }): PuntoHistorico[] {
-  // Los días son opcionales: si el OCR pierde esa columna se asumen 30.
-  const patron = new RegExp(String.raw`\b(${MESES_CORTOS})[a-z]*\.?\s+(\d{1,4})\s+\$?[\d.,]{3,}(?:\s+(\d{2})\b)?`, "g");
-  const filas: { mes: number; kwh: number; dias: number }[] = [];
+function tablaHistorico(t: string, periodo: string | undefined, ajuste?: { periodo?: string }): FilaHistorico[] {
+  // Los días son opcionales: si el OCR pierde esa columna se usan los días del mes del rótulo.
+  const patron = new RegExp(String.raw`\b(${MESES_CORTOS})[a-z]*\.?\s+(\d{1,4})\s+\$?([\d.,]{3,})(?:[ \t]+(\d{2})\b)?`, "g");
+  const filas: { mes: number; kwh: number; dias: number | null; valor?: number }[] = [];
   for (const m of t.matchAll(patron)) {
     const mes = mesDesdeTexto(m[1]);
     const kwh = Number(m[2]);
-    const dias = m[3] ? Number(m[3]) : 30;
-    if (!mes || kwh < 1 || kwh >= 3000 || dias < 15 || dias > 75) continue;
-    if (!filas.some((f) => f.mes === mes)) filas.push({ mes, kwh, dias });
+    const dias = m[4] ? Number(m[4]) : null;
+    if (!mes || kwh < 1 || kwh >= 3000 || (dias !== null && (dias < 15 || dias > 75))) continue;
+    const valor = parseNumeroCO(m[3]) ?? undefined;
+    if (!filas.some((f) => f.mes === mes)) filas.push({ mes, kwh, dias, valor });
   }
   if (!filas.length) return [];
   const referencia = periodoSegunHistorico(filas.map((f) => f.mes), periodo);
@@ -232,11 +277,11 @@ function tablaHistorico(t: string, periodo: string | undefined, ajuste?: { perio
   const hoy = new Date();
   let [anio, mesRef] = referencia ? referencia.split("-").map(Number) : [hoy.getFullYear(), hoy.getMonth() + 1];
   // Recorremos de la fila más reciente a la más antigua asignando años.
-  const resultado: PuntoHistorico[] = [];
+  const resultado: FilaHistorico[] = [];
   for (let i = filas.length - 1; i >= 0; i--) {
-    const { mes, kwh, dias } = filas[i];
+    const { mes, kwh, dias, valor } = filas[i];
     if (mes >= mesRef) anio -= 1; // cruzamos a diciembre del año anterior
-    resultado.unshift({ periodo: formatoPeriodo(anio, mes), kwh, dias });
+    resultado.unshift({ periodo: formatoPeriodo(anio, mes), kwh, dias: dias ?? diasDelMes(anio, mes), diasLeidos: dias !== null, valor });
     mesRef = mes;
   }
   return resultado;
@@ -271,7 +316,7 @@ export function extraerPorEstructura(textoOriginal: string): DatosEstructura {
   const historico = tablaHistorico(t, datos.periodo, ajuste);
   const grafico = historicoEnGrafico(t, datos.periodo, ajuste);
   if (historico.length || grafico.length) {
-    datos.historico = historico.length >= grafico.length ? historico : grafico;
+    datos.historico = fusionarHistorico(historico, grafico);
     // Los rótulos del histórico mandan: el periodo actual es el mes siguiente a la última fila.
     if (ajuste.periodo) datos.periodo = ajuste.periodo;
   }

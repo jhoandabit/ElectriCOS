@@ -134,6 +134,10 @@ function buscarEstrato(t: string): number | null {
   const patrones = [
     // El OCR a veces lee ":" como ";" o "," ("Estrato; 4").
     /estrato\s*(?:socio\s*economico)?\s*[:;,.\-]?\s*0?([1-6])\b/,
+    // El OCR a veces lee el 1 como "l", "i" o "|".
+    /estrato\s*[:;,.\-]?\s*([il|])(?![a-z0-9])/,
+    // Subsidio/contribución justo antes del estrato, aunque se pierda la palabra "Estrato".
+    /subsidio\s*[:;,.]?\s*-?\d{1,3}[.,]\d{1,2}\s+(?:estrato\s*[:;,.]?\s*)?([1-6])\b/,
     /\best\.?\s*[:.]?\s*0?([1-6])\b/,
     /residencial\s*(?:estrato\s*)?[-:]?\s*0?([1-6])\b/,
     /\bres\.?\s*0?([1-6])\b/,
@@ -141,7 +145,7 @@ function buscarEstrato(t: string): number | null {
   ];
   for (const p of patrones) {
     const m = t.match(p);
-    if (m) return Number(m[1]);
+    if (m) return /^[il|]$/.test(m[1]) ? 1 : Number(m[1]);
   }
   return null;
 }

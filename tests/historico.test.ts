@@ -23,13 +23,13 @@ test("tabla con días: se respetan los rótulos ABR…SEP y el periodo actual pa
   assert.equal(periodoDe(t), "2026-10");
 });
 
-test("tabla sin la columna de días (el OCR la perdió): se asumen 30", () => {
+test("tabla sin la columna de días (el OCR la perdió): se usan los días de cada mes", () => {
   const t = CAB + "ABR  278  218,067\nMAY  256  209,479\nJUN  267  222,704\nJUL  282  233,701\nAGO  256  219,490\nSEP  313  278,625";
   assert.deepEqual(
     resumen(t).map((x) => x.split(":").slice(0, 2).join(":")),
     ESPERADO.map((x) => x.split(":").slice(0, 2).join(":"))
   );
-  assert.ok(resumen(t).every((x) => x.endsWith(":30")));
+  assert.deepEqual(resumen(t).map((x) => x.split(":")[2]), ["30", "31", "30", "31", "31", "30"]);
 });
 
 test("gráfico con números sueltos (sin 'kWh') y rótulos ABR…ACTPROM", () => {
@@ -51,4 +51,34 @@ test("sin colisión no se corre nada: la factura de referencia (periodo 2026-09,
   const t = "147 Cartago  Residencial\nCT0172  4\n1400000000 GNS  19840  19487  353  1  353  267\n14/AGO/2026 - 10/SEP/2026  28\nMAR  207  162,374  31\nABR  178  145,654  30\nMAY  256  213,529  31\nJUN  280  232,043  30\nJUL  268  229,778  31\nAGO  415  369,423  33";
   assert.deepEqual(resumen(t), ["2026-03:207:31", "2026-04:178:30", "2026-05:256:31", "2026-06:280:30", "2026-07:268:31", "2026-08:415:33"]);
   assert.equal(periodoDe(t), "2026-09");
+});
+
+test("sin la columna de días se usan los días del mes (30, 31, 30, 31, 31, 30)", () => {
+  const r = extraerDeTexto(`MES KWH VALOR
+ABR 278 218,067
+MAY 256 209,479
+JUN 267 222,704
+JUL 282 233,701
+AGO 256 219,490
+SEP 313 278,625
+29/AGO/2026 - 28/SEP/2026`);
+  assert.deepEqual(r.historico.map((h) => h.dias), [30, 31, 30, 31, 31, 30]);
+});
+
+test("si tabla y gráfico no coinciden (256 vs 216) gana el que cuadra con el precio por kWh", () => {
+  const r = extraerDeTexto(`ABR 278 218,067 30
+MAY 216 209,479 31
+JUN 267 222,704 30
+JUL 282 233,701 31
+AGO 256 219,490 31
+SEP 313 278,625 30
+278 256 267 282 256 313 385 275
+ABR MAY JUN JUL AGO SEP ACTPROM
+29/AGO/2026 - 28/SEP/2026`);
+  assert.equal(r.historico.find((h) => h.periodo === "2026-05")?.kwh, 256);
+});
+
+test("estrato: la letra l o la falta de la palabra Estrato no lo pierden", () => {
+  assert.equal(extraerDeTexto("Servicio: Residencial Estrato: l Ciclo: 102").estrato, 1);
+  assert.equal(extraerDeTexto("% Subsidio: -49.05 1 Circuito LF02").estrato, 1);
 });
