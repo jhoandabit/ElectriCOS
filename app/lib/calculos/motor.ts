@@ -4,6 +4,8 @@
 //
 // Regla del proyecto: la IA NUNCA reemplaza estos cálculos; solo los explica.
 
+import { SUBSIDIO_MAXIMO_POR_ESTRATO } from "./parametros";
+
 export type Registro = {
   /** Mes del periodo facturado, formato AAAA-MM */
   periodo: string;
@@ -184,4 +186,17 @@ export function comparacionSubsistencia(kwhMes: number, sobre1000: boolean, bajo
 export function metaConLineaBase(periodos: string[], desde: string, hasta: string): boolean {
   const quedan = new Set(periodos.filter((p) => p >= desde && p <= hasta)).size;
   return quedan >= MESES_MINIMOS_LINEA_BASE;
+}
+
+
+/**
+ * Subsidio máximo posible del mes: el tope del estrato aplicado a los kWh que no pasan de la
+ * subsistencia (lo que pase se paga a tarifa plena). Devuelve null en estratos 4, 5 y 6.
+ * Es una cota ("hasta"): el subsidio real es el % que imprime la factura.
+ */
+export function subsidioMaximo(estrato: number, kwh: number, subsistencia: number, valorKwh: number) {
+  const porcentaje = SUBSIDIO_MAXIMO_POR_ESTRATO[estrato];
+  if (!porcentaje || !(kwh > 0) || !(valorKwh > 0)) return null;
+  const kwhSubsidiados = Math.min(kwh, subsistencia);
+  return { porcentaje, kwhSubsidiados, pesos: Math.round(kwhSubsidiados * valorKwh * (porcentaje / 100)) };
 }
