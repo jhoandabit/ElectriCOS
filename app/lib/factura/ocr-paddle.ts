@@ -8,6 +8,8 @@
 //   2. Reconocimiento: lee el texto de cada caja.
 // Licencia Apache-2.0 · https://github.com/PaddlePaddle/PaddleOCR
 
+import { paso } from "./diagnostico";
+
 type Punto = [number, number];
 export type CajaTexto = { texto: string; confianza: number; poligono: Punto[] };
 
@@ -44,6 +46,7 @@ async function rutaModelo(nombre: string) {
 /** Carga el lector una sola vez (la primera vez descarga ≈ 6 MB de modelos). */
 export function cargarLector(): Promise<Ocr> {
   instancia ??= (async () => {
+    paso("lector: cargando (SDK y modelos)");
     const { PaddleOCR } = await import("@paddleocr/paddleocr-js");
     const [det, rec] = await Promise.all([rutaModelo(MODELO_DETECCION), rutaModelo(MODELO_RECONOCIMIENTO)]);
     const ocr = await PaddleOCR.create({
@@ -57,8 +60,10 @@ export function cargarLector(): Promise<Ocr> {
       // En iPhone/iPad: WebAssembly de un hilo (WebGPU de Safari se quedaba sin memoria).
       ortOptions: esIOS() ? { backend: "wasm", numThreads: 1, wasmPaths: "/ort/" } : { backend: "auto", wasmPaths: "/ort/" },
     });
+    paso("lector: listo");
     return ocr as unknown as Ocr;
   })().catch((e) => {
+    paso(`lector: ERROR ${(e as Error)?.message ?? e}`);
     instancia = null; // permitir reintentar
     throw e;
   });
@@ -75,8 +80,12 @@ export function precargarLector() {
   void cargarLector().catch(() => undefined);
 }
 
+let lecturas = 0;
+
 export async function reconocer(imagen: Blob | HTMLCanvasElement): Promise<CajaTexto[]> {
   const ocr = await cargarLector();
+  const medida = "width" in imagen ? `${imagen.width}x${imagen.height}` : `${Math.round(imagen.size / 1024)} KB`;
+  paso(`lectura #${++lecturas}: ${medida}`);
   const [resultado] = await ocr.predict(imagen);
   return (resultado?.items ?? [])
     .filter((i) => i.text?.trim())
