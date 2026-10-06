@@ -11,9 +11,11 @@
 //   3. Si no aparece ningún dato, enderezar el recorte
 //      (el ángulo que deja los renglones más "nítidos") y leer otra vez.
 
-import { cargarImagen, dimensiones } from "./archivos";
+import { cargarImagen, dimensiones, girarLienzo, soltarLienzo } from "./archivos";
 import { datosDeRecorte, type DatosRecorte } from "./extraer-texto";
+import { recuadroEnOriginal } from "./orientacion";
 import { agruparEnRenglones, reconocer } from "./ocr-paddle";
+import type { Giro } from "./tipos";
 
 export type Recuadro = { x: number; y: number; ancho: number; alto: number }; // 0 a 1
 
@@ -101,30 +103,41 @@ export type ResultadoGuiado = {
   recorteUrl: string;
 };
 
+/**
+ * `giro`: lo que se giró la foto para leerla (si venía de lado). El recuadro está dibujado
+ * sobre la foto ya derecha; se recorta de la foto ORIGINAL (resolución completa) y solo el
+ * recorte se gira, así no hace falta una segunda copia grande de la foto en memoria.
+ */
 export async function leerRecuadro(
   archivo: File,
   recuadro: Recuadro,
-  alProgresar: (mensaje: string) => void
+  alProgresar: (mensaje: string) => void,
+  giro: Giro = 0
 ): Promise<ResultadoGuiado> {
   alProgresar("Recortando la parte que encerraste…");
   const imagen = await cargarImagen(archivo);
   const { ancho, alto } = dimensiones(imagen);
-  const sx = Math.round(recuadro.x * ancho);
-  const sy = Math.round(recuadro.y * alto);
-  const sw = Math.max(10, Math.round(recuadro.ancho * ancho));
-  const sh = Math.max(10, Math.round(recuadro.alto * alto));
+  const o = recuadroEnOriginal(recuadro, giro);
+  const sx = Math.round(o.x * ancho);
+  const sy = Math.round(o.y * alto);
+  const sw = Math.max(10, Math.round(o.ancho * ancho));
+  const sh = Math.max(10, Math.round(o.alto * alto));
 
-  const factor = Math.min(4, Math.max(1, 1600 / sw));
-  const recorte = document.createElement("canvas");
-  recorte.width = Math.round(sw * factor);
-  recorte.height = Math.round(sh * factor);
-  const ctx = recorte.getContext("2d");
+  // El ancho que importa para ampliar es el de la foto derecha (con giro lateral es el alto original).
+  const anchoDerecho = giro === 90 || giro === 270 ? sh : sw;
+  const factor = Math.min(4, Math.max(1, 1600 / anchoDerecho));
+  const recorteOriginal = document.createElement("canvas");
+  recorteOriginal.width = Math.round(sw * factor);
+  recorteOriginal.height = Math.round(sh * factor);
+  const ctx = recorteOriginal.getContext("2d");
   if (!ctx) throw new Error("No se pudo recortar la imagen.");
   ctx.fillStyle = "#fff";
-  ctx.fillRect(0, 0, recorte.width, recorte.height);
+  ctx.fillRect(0, 0, recorteOriginal.width, recorteOriginal.height);
   ctx.imageSmoothingQuality = "high";
-  ctx.drawImage(imagen, sx, sy, sw, sh, 0, 0, recorte.width, recorte.height);
+  ctx.drawImage(imagen, sx, sy, sw, sh, 0, 0, recorteOriginal.width, recorteOriginal.height);
   if ("close" in imagen) imagen.close(); // soltar la foto completa enseguida
+  const recorte = girarLienzo(recorteOriginal, giro);
+  if (recorte !== recorteOriginal) soltarLienzo(recorteOriginal);
   const recorteUrl = recorte.toDataURL("image/jpeg", 0.85);
 
   alProgresar("Leyendo esa parte…");

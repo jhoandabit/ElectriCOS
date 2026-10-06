@@ -2,6 +2,9 @@
 // Todas las fuentes (texto del PDF, OCR en el celular, ingreso manual)
 // producen este mismo objeto, y el motor de cálculo solo lee este modelo.
 
+/** Grados en sentido horario que hay que girar la foto para dejarla derecha. */
+export type Giro = 0 | 90 | 180 | 270;
+
 export type FuenteLectura = "pdf-texto" | "ocr-local" | "manual";
 
 export type EmpresaId =
@@ -58,6 +61,8 @@ export type ResultadoLectura = {
   confianzaConsumo: number;
   /** Texto crudo (solo para depuración, nunca se guarda) */
   textoTecnico?: string;
+  /** Giro que se aplicó a la foto para leerla (0 si ya estaba derecha). */
+  giro?: Giro;
 };
 
 export const DATOS_VACIOS: DatosFactura = {

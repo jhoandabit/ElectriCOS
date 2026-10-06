@@ -7,18 +7,34 @@
 // queda validado, la interfaz ofrece la lectura guiada (ocr-guiado.ts).
 // Ninguna imagen se envía a servidores externos.
 
-import { esPdf, leerPdf, prepararFoto } from "./archivos";
+import { esPdf, girarLienzo, leerPdf, prepararFoto, reducirLienzo, soltarLienzo } from "./archivos";
 import { paso } from "./diagnostico";
 import { extraerDeTexto } from "./extraer-texto";
 import { agruparEnRenglones, leerGraficoDeBarras, reconocer } from "./ocr-paddle";
-import type { AvisoLectura, DatosFactura, FuenteLectura, ResultadoLectura } from "./tipos";
+import { detectarGiro } from "./orientacion";
+import type { AvisoLectura, DatosFactura, FuenteLectura, Giro, ResultadoLectura } from "./tipos";
 import { validarYCompletar } from "./validar";
 
 type AlProgresar = (mensaje: string) => void;
 
-function terminar(datos: DatosFactura, fuente: FuenteLectura, avisosExtra: AvisoLectura[], textoTecnico?: string): ResultadoLectura {
+function terminar(datos: DatosFactura, fuente: FuenteLectura, avisosExtra: AvisoLectura[], textoTecnico?: string, giro?: Giro): ResultadoLectura {
   const { datos: completos, avisos, confianzaConsumo } = validarYCompletar(datos);
-  return { datos: completos, fuente, avisos: [...avisosExtra, ...avisos], confianzaConsumo, textoTecnico };
+  return { datos: completos, fuente, avisos: [...avisosExtra, ...avisos], confianzaConsumo, textoTecnico, giro };
+}
+
+/**
+ * Lectura de prueba (versión pequeña de la foto, girada `giro`) para saber cómo está girada.
+ * Una foto del celular puede venir con el texto de lado sin marca de rotación.
+ */
+async function textoDePrueba(foto: HTMLCanvasElement, giro: Giro): Promise<string> {
+  const pequena = reducirLienzo(foto, 1100);
+  const girada = girarLienzo(pequena, giro);
+  try {
+    return (await reconocer(girada)).map((c) => c.texto).join("\n");
+  } finally {
+    if (girada !== pequena) soltarLienzo(girada);
+    if (pequena !== foto) soltarLienzo(pequena);
+  }
 }
 
 async function leerImagen(imagen: HTMLCanvasElement, alProgresar: AlProgresar): Promise<string> {
@@ -76,7 +92,17 @@ export async function leerFactura(archivo: File, alProgresar: AlProgresar, texto
   alProgresar("Preparando la foto…");
   const foto = await prepararFoto(archivo, 2000);
   paso(`foto preparada para leer: ${foto.canvas.width}x${foto.canvas.height}`);
-  const nuevo = await leerImagen(foto.canvas, alProgresar);
+  alProgresar("Revisando cómo quedó la foto…");
+  const { giro, puntajes } = await detectarGiro((g) => textoDePrueba(foto.canvas, g));
+  paso(`orientación: giro ${giro}° (puntajes ${JSON.stringify(puntajes)})`);
+  let lienzo = foto.canvas;
+  if (giro) {
+    alProgresar("La foto estaba de lado: enderezándola…");
+    lienzo = girarLienzo(foto.canvas, giro);
+    soltarLienzo(foto.canvas); // la versión sin girar ya no hace falta
+  }
+  const nuevo = await leerImagen(lienzo, alProgresar);
+  soltarLienzo(lienzo); // ya no se usa: se libera la memoria de la foto grande
   const texto = textoPrevio ? `${textoPrevio}\n${nuevo}` : nuevo;
   if (!nuevo.trim()) {
     avisos.push({
@@ -85,5 +111,5 @@ export async function leerFactura(archivo: File, alProgresar: AlProgresar, texto
       mensaje: "No se encontró texto en la foto. Tómala de frente, completa y con buena luz, o usa la lectura guiada.",
     });
   }
-  return terminar(extraerDeTexto(texto), "ocr-local", avisos, texto);
+  return terminar(extraerDeTexto(texto), "ocr-local", avisos, texto, giro);
 }

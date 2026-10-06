@@ -6,6 +6,8 @@
 // px: suficiente para leer una factura, liviano para el celular.
 const LADO_MAXIMO = 2000;
 
+import type { Giro } from "./tipos";
+
 export function esPdf(archivo: File) {
   return archivo.type === "application/pdf" || archivo.name.toLowerCase().endsWith(".pdf");
 }
@@ -59,6 +61,40 @@ export async function prepararFoto(
   return { canvas };
 }
 
+/** Copia del lienzo girada `giro` grados en sentido horario (0 devuelve el mismo lienzo). */
+export function girarLienzo(origen: HTMLCanvasElement, giro: Giro): HTMLCanvasElement {
+  if (!giro) return origen;
+  const lateral = giro === 90 || giro === 270;
+  const c = document.createElement("canvas");
+  c.width = lateral ? origen.height : origen.width;
+  c.height = lateral ? origen.width : origen.height;
+  const ctx = c.getContext("2d");
+  if (!ctx) return origen;
+  ctx.imageSmoothingQuality = "high";
+  ctx.translate(c.width / 2, c.height / 2);
+  ctx.rotate((giro * Math.PI) / 180);
+  ctx.drawImage(origen, -origen.width / 2, -origen.height / 2);
+  return c;
+}
+
+/** Copia reducida (lado mayor `lado`) para lecturas de prueba. */
+export function reducirLienzo(origen: HTMLCanvasElement, lado: number): HTMLCanvasElement {
+  const escala = Math.min(1, lado / Math.max(origen.width, origen.height));
+  const c = document.createElement("canvas");
+  c.width = Math.max(1, Math.round(origen.width * escala));
+  c.height = Math.max(1, Math.round(origen.height * escala));
+  const ctx = c.getContext("2d");
+  if (!ctx) return origen;
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(origen, 0, 0, c.width, c.height);
+  return c;
+}
+
+/** Suelta la memoria de un lienzo de inmediato (Safari la retiene si no). */
+export function soltarLienzo(c: HTMLCanvasElement) {
+  c.width = c.height = 0;
+}
+
 /**
  * Miniatura liviana (por defecto, lado mayor de 1100 px, JPEG) para MOSTRAR la foto.
  * La foto original de un iPhone (≈ 12 MP) ocupa ≈ 48 MB al decodificarse: mostrarla
@@ -67,7 +103,7 @@ export async function prepararFoto(
  * guiada siguen usando la foto original; como se conserva la proporción, el
  * recuadro (fracciones de 0 a 1) cae en el mismo sitio.
  */
-export async function miniaturaFoto(archivo: Blob, lado = 1100): Promise<Blob> {
+export async function miniaturaFoto(archivo: Blob, lado = 1100, giro: Giro = 0): Promise<Blob> {
   const imagen = await cargarImagen(archivo);
   const { ancho, alto } = dimensiones(imagen);
   const escala = Math.min(1, lado / Math.max(ancho, alto));
@@ -79,9 +115,11 @@ export async function miniaturaFoto(archivo: Blob, lado = 1100): Promise<Blob> {
   ctx.imageSmoothingQuality = "high";
   ctx.drawImage(imagen, 0, 0, canvas.width, canvas.height);
   if ("close" in imagen) imagen.close();
-  const blob = await new Promise<Blob | null>((ok) => canvas.toBlob(ok, "image/jpeg", 0.85));
-  // Soltar la memoria del lienzo de inmediato (Safari la retiene si no).
-  canvas.width = canvas.height = 0;
+  // Si la foto venía de lado, la vista previa se muestra ya derecha.
+  const final = girarLienzo(canvas, giro);
+  const blob = await new Promise<Blob | null>((ok) => final.toBlob(ok, "image/jpeg", 0.85));
+  if (final !== canvas) soltarLienzo(final);
+  soltarLienzo(canvas);
   if (!blob) throw new Error("No se pudo preparar la vista previa.");
   return blob;
 }

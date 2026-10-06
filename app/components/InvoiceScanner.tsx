@@ -6,7 +6,7 @@ import { paso, reiniciarPasos, textoDiagnostico } from "../lib/factura/diagnosti
 import { leerFactura } from "../lib/factura/leer-factura";
 import { leerRecuadro, type Recuadro, type ResultadoGuiado } from "../lib/factura/ocr-guiado";
 import { precargarLector } from "../lib/factura/ocr-paddle";
-import type { AvisoLectura, DatosFactura, FuenteLectura, ResultadoLectura } from "../lib/factura/tipos";
+import type { AvisoLectura, DatosFactura, FuenteLectura, Giro, ResultadoLectura } from "../lib/factura/tipos";
 import { validarYCompletar } from "../lib/factura/validar";
 import SelectorRecuadro from "./SelectorRecuadro";
 
@@ -96,6 +96,8 @@ export default function InvoiceScanner({ onUsar, recargada = false }: Props) {
   const [partes, setPartes] = useState(0);
   // Registro de pasos de la última lectura: si el celular recarga o cierra la página,
   // aquí queda dónde fue (ver lib/factura/diagnostico.ts).
+  // Cuánto se giró la foto para leerla (si venía de lado). La vista previa y la lectura guiada lo usan.
+  const [giro, setGiro] = useState<Giro>(0);
   const [diagnostico, setDiagnostico] = useState("");
   const [copiado, setCopiado] = useState(false);
 
@@ -156,6 +158,7 @@ export default function InvoiceScanner({ onUsar, recargada = false }: Props) {
       }
     }
     setVistaPrevia(vista);
+    setGiro(0);
     paso("vista previa lista");
     setGuiaAbierta(false);
     setRecuadro(null);
@@ -184,6 +187,17 @@ export default function InvoiceScanner({ onUsar, recargada = false }: Props) {
       }
       setLectura(resultado);
       setMetodo(resultado.fuente);
+      // Si la foto venía de lado, la vista previa (y el recuadro de la lectura guiada) se muestran derechas.
+      const girada = resultado.giro ?? 0;
+      setGiro(girada);
+      if (!pdf && girada) {
+        try {
+          setVistaPrevia(URL.createObjectURL(await miniaturaFoto(ultimo, 1100, girada)));
+          paso(`vista previa girada ${girada}°`);
+        } catch {
+          /* se queda la vista previa sin girar */
+        }
+      }
       paso(`resultado mostrado (confianza ${resultado.confianzaConsumo} %)`);
       if (!pdf && resultado.confianzaConsumo < 80 && n === 1) {
         paso("se abre la lectura guiada");
@@ -214,7 +228,7 @@ export default function InvoiceScanner({ onUsar, recargada = false }: Props) {
     setLeyendo(true);
     setError("");
     try {
-      const r = await leerRecuadro(archivo, recuadro, setEstado);
+      const r = await leerRecuadro(archivo, recuadro, setEstado, giro);
       setGuiado(r);
       const nuevos = r.datos;
       if (!Object.keys(nuevos).length) {
