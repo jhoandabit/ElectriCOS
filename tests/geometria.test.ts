@@ -50,3 +50,10 @@ test("un mes sin leer en la tabla no impide corregir el periodo ni los años (5 
   const h = extraerDeTexto("ABR 278 218,067 30\nMAY 256 209,479 31\nJUN 267 222,704 30\nJUL 282 233,701 31\nSEP 313 278,625 30\n29/AGO/2026 - 28/SEP/2026 Días facturados: 31").historico;
   assert.deepEqual(h.map((x) => x.periodo), ["2026-04", "2026-05", "2026-06", "2026-07", "2026-09"]);
 });
+
+test("cada fila trae la zona del kWh para releerlo ampliado", async () => {
+  const { filasDeTabla } = await import("../app/lib/factura/geometria");
+  const f = filasDeTabla(tabla(0));
+  const may = f.find((x) => x.mes === "MAY");
+  assert.ok(may && may.kwh === 256 && may.zonaKwh.x > 900 && may.zonaKwh.x < 1000 && may.zonaKwh.alto > 20);
+});

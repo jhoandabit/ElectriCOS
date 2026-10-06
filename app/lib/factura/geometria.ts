@@ -5,7 +5,7 @@
 
 export type CajaPos = { texto: string; poligono: [number, number][] };
 
-type Ficha = { t: string; cx: number; cy: number; h: number; x1: number };
+type Ficha = { t: string; cx: number; cy: number; h: number; x1: number; ancho: number };
 
 const MES = /^(ene|feb|mar|abr|may|jun|jul|ago|sep|sept|oct|nov|dic)\.?$/;
 
@@ -22,7 +22,7 @@ function fichas(cajas: CajaPos[]): Ficha[] {
     if (!texto) continue;
     for (const m of texto.matchAll(/\S+/g)) {
       const centro = ((m.index ?? 0) + m[0].length / 2) / texto.length;
-      r.push({ t: m[0].toLowerCase(), cx: x0 + centro * (x1 - x0), cy: (y0 + y1) / 2, h: Math.max(1, y1 - y0), x1 });
+      r.push({ t: m[0].toLowerCase(), cx: x0 + centro * (x1 - x0), cy: (y0 + y1) / 2, h: Math.max(1, y1 - y0), x1, ancho: (m[0].length / texto.length) * (x1 - x0) });
     }
   }
   return r;
@@ -41,7 +41,24 @@ function aLaDerecha(todas: Ficha[], desde: Ficha, tolerancia: number, vale: (t: 
  * Tabla "Consumo últimos seis meses": una línea por mes con el formato "ABR 278 218,067 30"
  * (mes, kWh, valor, días). Devuelve [] si no encuentra una columna de al menos 3 meses.
  */
+export type FilaTabla = {
+  mes: string;
+  kwh: number;
+  valor: string | null;
+  dias: string | null;
+  /** Dónde quedó el kWh en la imagen (para releerlo ampliado). */
+  zonaKwh: { x: number; y: number; ancho: number; alto: number };
+};
+
+export function textoDeFila(f: FilaTabla): string {
+  return `${f.mes} ${f.kwh} ${f.valor ?? "0,000"}${f.dias ? ` ${f.dias}` : ""}`;
+}
+
 export function lineasDeTabla(cajas: CajaPos[]): string[] {
+  return filasDeTabla(cajas).map(textoDeFila);
+}
+
+export function filasDeTabla(cajas: CajaPos[]): FilaTabla[] {
   const todas = fichas(cajas);
   const meses = todas.filter((f) => MES.test(f.t));
   if (meses.length < 3) return [];
@@ -58,15 +75,21 @@ export function lineasDeTabla(cajas: CajaPos[]): string[] {
   const paso = mediana(mejor.slice(1).map((m, i) => m.cy - mejor[i].cy));
   const tol = paso * 0.5;
 
-  const lineas: string[] = [];
+  const filas: FilaTabla[] = [];
   for (const m of mejor) {
     const kwh = aLaDerecha(todas, m, tol, (t) => /^\d{2,4}$/.test(t));
     if (!kwh) continue;
     const valor = aLaDerecha(todas, kwh, tol, (t) => /^\$?\d{1,3}([.,]\d{3})+$|^\d{5,7}$/.test(t));
     const dias = valor ? aLaDerecha(todas, valor, tol, (t) => /^\d{2}$/.test(t) && Number(t) >= 15 && Number(t) <= 75) : undefined;
-    lineas.push(`${m.t.toUpperCase()} ${kwh.t} ${valor ? valor.t : "0,000"}${dias ? ` ${dias.t}` : ""}`);
+    filas.push({
+      mes: m.t.toUpperCase(),
+      kwh: Number(kwh.t),
+      valor: valor ? valor.t : null,
+      dias: dias ? dias.t : null,
+      zonaKwh: { x: kwh.cx - kwh.ancho / 2 - kwh.h * 0.6, y: kwh.cy - kwh.h * 0.9, ancho: kwh.ancho + kwh.h * 1.2, alto: kwh.h * 1.8 },
+    });
   }
-  return lineas.length >= 3 ? lineas : [];
+  return filas.length >= 3 ? filas : [];
 }
 
 /**

@@ -11,7 +11,7 @@ import { esPdf, girarLienzo, leerPdf, prepararFoto, reducirLienzo, soltarLienzo 
 import { paso } from "./diagnostico";
 import { extraerDeTexto } from "./extraer-texto";
 import { agruparEnRenglones, leerGraficoDeBarras, reconocer } from "./ocr-paddle";
-import { lineasDeTabla, zonaDelEstrato } from "./geometria";
+import { filasDeTabla, textoDeFila, zonaDelEstrato, type FilaTabla } from "./geometria";
 import { detectarGiro } from "./orientacion";
 import type { AvisoLectura, DatosFactura, FuenteLectura, Giro, ResultadoLectura } from "./tipos";
 import { validarYCompletar } from "./validar";
@@ -38,30 +38,68 @@ async function textoDePrueba(foto: HTMLCanvasElement, giro: Giro): Promise<strin
   }
 }
 
-async function leerZonaDelEstrato(imagen: HTMLCanvasElement, cajas: Awaited<ReturnType<typeof reconocer>>): Promise<string> {
-  const z = zonaDelEstrato(cajas);
-  if (!z) return "";
+/** Relee solo un rectángulo de la foto, ampliado. */
+async function leerZona(imagen: HTMLCanvasElement, z: { x: number; y: number; ancho: number; alto: number }): Promise<string> {
   const sx = Math.max(0, Math.round(z.x));
   const sy = Math.max(0, Math.round(z.y));
   const sw = Math.min(imagen.width - sx, Math.round(z.ancho));
   const sh = Math.min(imagen.height - sy, Math.round(z.alto));
-  if (sw < 10 || sh < 10) return "";
-  const factor = Math.min(6, Math.max(2, 120 / sh));
+  if (sw < 6 || sh < 6) return "";
+  const factor = Math.min(8, Math.max(2, 120 / sh));
+  const margen = Math.round(20 * factor * 0.5);
   const recorte = document.createElement("canvas");
-  recorte.width = Math.round(sw * factor);
-  recorte.height = Math.round(sh * factor);
+  recorte.width = Math.round(sw * factor) + margen * 2;
+  recorte.height = Math.round(sh * factor) + margen * 2;
   const ctx = recorte.getContext("2d");
   if (!ctx) return "";
   ctx.fillStyle = "#fff";
   ctx.fillRect(0, 0, recorte.width, recorte.height);
-  ctx.drawImage(imagen, sx, sy, sw, sh, 0, 0, recorte.width, recorte.height);
+  ctx.drawImage(imagen, sx, sy, sw, sh, margen, margen, Math.round(sw * factor), Math.round(sh * factor));
   try {
-    const t = (await reconocer(recorte)).map((c) => c.texto).join(" ").trim();
-    if (!t) return "";
-    return z.ancla === "estrato" ? `Estrato: ${t}` : `% Subsidio: ${t}`;
+    const cajas = await reconocer(recorte);
+    return cajas.map((c) => c.texto).join(" ").trim();
   } finally {
     soltarLienzo(recorte);
   }
+}
+
+async function leerZonaDelEstrato(imagen: HTMLCanvasElement, cajas: Awaited<ReturnType<typeof reconocer>>): Promise<string> {
+  const z = zonaDelEstrato(cajas);
+  if (!z) return "";
+  const t = await leerZona(imagen, z);
+  if (!t) return "";
+  return z.ancla === "estrato" ? `Estrato: ${t}` : `% Subsidio: ${t}`;
+}
+
+const medianaDe = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)];
+
+/**
+ * Un kWh mal leído (256 → 216) rompe el precio por kWh de su fila (pesos ÷ kWh). Las filas
+ * cuyo precio se sale más de 10 % del típico se releen ampliadas; se queda con la lectura
+ * cuyo precio se parece más al de las demás filas.
+ */
+async function corregirFilasSospechosas(imagen: HTMLCanvasElement, filas: FilaTabla[]): Promise<FilaTabla[]> {
+  const precio = (f: FilaTabla, kwh: number) => (f.valor ? (Number(f.valor.replace(/[.,]/g, "")) || 0) / kwh : 0);
+  const precios = filas.filter((f) => f.valor).map((f) => precio(f, f.kwh)).filter((p) => p > 0);
+  if (precios.length < 4) return filas;
+  const tipico = medianaDe(precios);
+  const resultado: FilaTabla[] = [];
+  for (const f of filas) {
+    const p = precio(f, f.kwh);
+    if (!f.valor || p === 0 || Math.abs(p - tipico) / tipico <= 0.1) {
+      resultado.push(f);
+      continue;
+    }
+    const texto = await leerZona(imagen, f.zonaKwh).catch(() => "");
+    const nuevo = Number((texto.match(/\d{2,4}/) ?? [])[0]);
+    paso(`${f.mes}: kWh sospechoso (${f.kwh}), releído como "${texto}"`);
+    if (Number.isFinite(nuevo) && nuevo >= 1 && nuevo < 3000 && Math.abs(precio(f, nuevo) - tipico) < Math.abs(p - tipico)) {
+      resultado.push({ ...f, kwh: nuevo });
+    } else {
+      resultado.push(f);
+    }
+  }
+  return resultado;
 }
 
 async function leerImagen(imagen: HTMLCanvasElement, alProgresar: AlProgresar): Promise<string> {
@@ -75,9 +113,12 @@ async function leerImagen(imagen: HTMLCanvasElement, alProgresar: AlProgresar): 
   // La tabla de "últimos consumos" también se lee POR POSICIÓN (mes → kWh → valor → días),
   // porque en una foto torcida los renglones se mezclan con el gráfico de barras. Va primero:
   // el extractor se queda con la primera fila de cada mes.
-  const filasTabla = lineasDeTabla(cajas);
+  let filasTabla = filasDeTabla(cajas);
   paso(`tabla por posición: ${filasTabla.length} meses`);
-  if (filasTabla.length) texto = `${filasTabla.join("\n")}\n${texto}`;
+  if (filasTabla.length) {
+    filasTabla = await corregirFilasSospechosas(imagen, filasTabla).catch(() => filasTabla);
+    texto = `${filasTabla.map(textoDeFila).join("\n")}\n${texto}`;
+  }
 
   // El estrato es un solo dígito suelto y el lector suele descartarlo: si falta, se lee otra vez
   // solo esa zona, ampliada.
