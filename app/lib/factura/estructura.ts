@@ -62,7 +62,8 @@ function filaMedidor(t: string): Partial<DatosEstructura> | null {
 function periodoSegunHistorico(meses: number[], periodo: string | undefined): string | undefined {
   if (!periodo || meses.length < 2) return periodo;
   const [anio, mesActual] = periodo.split("-").map(Number);
-  const seguidos = meses.every((m, i) => i === 0 || (m - meses[i - 1] + 12) % 12 === 1);
+  // En orden y sin saltos grandes: puede faltar un mes que el OCR no leyó.
+  const seguidos = meses.every((m, i) => i === 0 || [1, 2].includes((m - meses[i - 1] + 12) % 12));
   if (!seguidos || meses[meses.length - 1] !== mesActual) return periodo;
   return mesActual === 12 ? formatoPeriodo(anio + 1, 1) : formatoPeriodo(anio, mesActual + 1);
 }
@@ -186,7 +187,7 @@ function historicoEnGrafico(t: string, periodo: string | undefined, ajuste?: { p
         mesRef = mes;
       }
       // El primer punto no tiene anterior: se le asigna el mismo salto que al segundo.
-      if (puntos.length > 1) puntos[0].dias = puntos[1].dias;
+      if (puntos.length > 1 && puntos[1].dias !== diasDelMes(Number(puntos[1].periodo.slice(0, 4)), Number(puntos[1].periodo.slice(5, 7)))) puntos[0].dias = puntos[1].dias;
       return puntos;
     }
   }

@@ -11,6 +11,7 @@ import { esPdf, girarLienzo, leerPdf, prepararFoto, reducirLienzo, soltarLienzo 
 import { paso } from "./diagnostico";
 import { extraerDeTexto } from "./extraer-texto";
 import { agruparEnRenglones, leerGraficoDeBarras, reconocer } from "./ocr-paddle";
+import { lineasDeTabla, zonaDelEstrato } from "./geometria";
 import { detectarGiro } from "./orientacion";
 import type { AvisoLectura, DatosFactura, FuenteLectura, Giro, ResultadoLectura } from "./tipos";
 import { validarYCompletar } from "./validar";
@@ -37,6 +38,32 @@ async function textoDePrueba(foto: HTMLCanvasElement, giro: Giro): Promise<strin
   }
 }
 
+async function leerZonaDelEstrato(imagen: HTMLCanvasElement, cajas: Awaited<ReturnType<typeof reconocer>>): Promise<string> {
+  const z = zonaDelEstrato(cajas);
+  if (!z) return "";
+  const sx = Math.max(0, Math.round(z.x));
+  const sy = Math.max(0, Math.round(z.y));
+  const sw = Math.min(imagen.width - sx, Math.round(z.ancho));
+  const sh = Math.min(imagen.height - sy, Math.round(z.alto));
+  if (sw < 10 || sh < 10) return "";
+  const factor = Math.min(6, Math.max(2, 120 / sh));
+  const recorte = document.createElement("canvas");
+  recorte.width = Math.round(sw * factor);
+  recorte.height = Math.round(sh * factor);
+  const ctx = recorte.getContext("2d");
+  if (!ctx) return "";
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, recorte.width, recorte.height);
+  ctx.drawImage(imagen, sx, sy, sw, sh, 0, 0, recorte.width, recorte.height);
+  try {
+    const t = (await reconocer(recorte)).map((c) => c.texto).join(" ").trim();
+    if (!t) return "";
+    return z.ancla === "estrato" ? `Estrato: ${t}` : `% Subsidio: ${t}`;
+  } finally {
+    soltarLienzo(recorte);
+  }
+}
+
 async function leerImagen(imagen: HTMLCanvasElement, alProgresar: AlProgresar): Promise<string> {
   alProgresar("Preparando el lector (la primera vez tarda un poco más)…");
   const lectura = reconocer(imagen);
@@ -45,13 +72,28 @@ async function leerImagen(imagen: HTMLCanvasElement, alProgresar: AlProgresar): 
   paso(`lectura principal: terminó (${cajas.length} cajas de texto)`);
   let texto = agruparEnRenglones(cajas).join("\n");
 
+  // La tabla de "últimos consumos" también se lee POR POSICIÓN (mes → kWh → valor → días),
+  // porque en una foto torcida los renglones se mezclan con el gráfico de barras. Va primero:
+  // el extractor se queda con la primera fila de cada mes.
+  const filasTabla = lineasDeTabla(cajas);
+  paso(`tabla por posición: ${filasTabla.length} meses`);
+  if (filasTabla.length) texto = `${filasTabla.join("\n")}\n${texto}`;
+
+  // El estrato es un solo dígito suelto y el lector suele descartarlo: si falta, se lee otra vez
+  // solo esa zona, ampliada.
+  if (extraerDeTexto(texto).estrato === null) {
+    const extra = await leerZonaDelEstrato(imagen, cajas).catch(() => "");
+    paso(`estrato: lectura de la zona ${extra ? "con texto" : "sin texto"}`);
+    if (extra) texto += `\n${extra}`;
+  }
+
   // Gráfico de "últimos consumos": se leen las columnas por separado y se
   // agregan al texto en un formato que extraer-texto entiende:
   //   "119 kWh  112 kWh  …  314 kWh" / "SEP  NOV  …  Actual".
   // Una columna ilegible queda en 0 y la validación la descarta (se escribe a mano).
   // Si la tabla de "últimos consumos" ya trajo los meses anteriores, no se vuelve a leer el
   // gráfico: son decenas de lecturas seguidas y en el iPhone la memoria no alcanza.
-  const tablaYaLeida = extraerDeTexto(texto).historico.length >= 3;
+  const tablaYaLeida = extraerDeTexto(texto).historico.length >= 6;
   if (tablaYaLeida) paso("gráfico de barras: omitido (la tabla ya trajo los meses)");
   if (!tablaYaLeida && /\b(ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic)\b/i.test(texto)) {
     alProgresar("Leyendo el gráfico de consumos…");
