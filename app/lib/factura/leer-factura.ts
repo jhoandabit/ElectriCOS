@@ -31,7 +31,10 @@ async function leerImagen(imagen: HTMLCanvasElement, alProgresar: AlProgresar): 
   // agregan al texto en un formato que extraer-texto entiende:
   //   "119 kWh  112 kWh  …  314 kWh" / "SEP  NOV  …  Actual".
   // Una columna ilegible queda en 0 y la validación la descarta (se escribe a mano).
-  if (/\b(ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic)\b/i.test(texto)) {
+  // Si la tabla de "últimos consumos" ya trajo los meses anteriores, no se vuelve a leer el
+  // gráfico: son decenas de lecturas seguidas y en el iPhone la memoria no alcanza.
+  const tablaYaLeida = extraerDeTexto(texto).historico.length >= 3;
+  if (!tablaYaLeida && /\b(ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic)\b/i.test(texto)) {
     alProgresar("Leyendo el gráfico de consumos…");
     const g = await leerGraficoDeBarras(imagen, cajas).catch(() => null);
     if (g) {
