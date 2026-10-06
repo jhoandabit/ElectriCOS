@@ -59,6 +59,33 @@ export async function prepararFoto(
   return { canvas };
 }
 
+/**
+ * Miniatura liviana (por defecto, lado mayor de 1100 px, JPEG) para MOSTRAR la foto.
+ * La foto original de un iPhone (≈ 12 MP) ocupa ≈ 48 MB al decodificarse: mostrarla
+ * en pantalla mientras el lector de texto está en memoria hacía que Safari cerrara
+ * la página justo al terminar la lectura. La lectura y el recorte de la lectura
+ * guiada siguen usando la foto original; como se conserva la proporción, el
+ * recuadro (fracciones de 0 a 1) cae en el mismo sitio.
+ */
+export async function miniaturaFoto(archivo: Blob, lado = 1100): Promise<Blob> {
+  const imagen = await cargarImagen(archivo);
+  const { ancho, alto } = dimensiones(imagen);
+  const escala = Math.min(1, lado / Math.max(ancho, alto));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(ancho * escala));
+  canvas.height = Math.max(1, Math.round(alto * escala));
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("No se pudo preparar la vista previa.");
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(imagen, 0, 0, canvas.width, canvas.height);
+  if ("close" in imagen) imagen.close();
+  const blob = await new Promise<Blob | null>((ok) => canvas.toBlob(ok, "image/jpeg", 0.85));
+  // Soltar la memoria del lienzo de inmediato (Safari la retiene si no).
+  canvas.width = canvas.height = 0;
+  if (!blob) throw new Error("No se pudo preparar la vista previa.");
+  return blob;
+}
+
 async function cargarPdfjs() {
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
   pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/legacy/build/pdf.worker.mjs", import.meta.url).toString();
