@@ -6,6 +6,7 @@
 // Los primeros avisos usan los datos del hogar (reglas de recomendaciones.ts); después, consejos generales.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { cicloQuincenal } from "../lib/calculos/ciclo";
 import { calcularLineaBase, huellaKg, kwhMesNormalizado, redondear } from "../lib/calculos/motor";
 import type { Parametro } from "../lib/calculos/parametros";
 import { recomendacionesPorReglas } from "../lib/calculos/recomendaciones";
@@ -28,6 +29,8 @@ const GENERALES: Consejo[] = [
 
 const LLAVE_APAGADO = "electricos-consejos-apagados";
 const LLAVE_INDICE = "electricos-consejo-indice";
+const LLAVE_CICLO = "electricos-consejo-ciclo";
+
 
 function leer(llave: string): string | null {
   try {
@@ -95,7 +98,7 @@ export default function ConsejoEmergente({ permitido, activos, onApagar, hogar, 
     return [...contextuales, ...GENERALES];
   }, [hogar, registros, meta, parametros]);
 
-  const [visible, setVisible] = useState<Consejo | null>(null);
+  const [visible, setVisible] = useState<(Consejo & { quincena?: boolean }) | null>(null);
   const [cerrando, setCerrando] = useState(false);
   const indice = useRef(0);
   const consejosRef = useRef(consejos);
@@ -120,6 +123,9 @@ export default function ConsejoEmergente({ permitido, activos, onApagar, hogar, 
       return;
     }
     let ocultarEn: number | undefined;
+    // El consejo del 10 y del 20: la primera vez que se abre la app desde esa fecha sale casi de inmediato.
+    const ciclo = cicloQuincenal(new Date());
+    let pendienteQuincena = ciclo !== null && leer(LLAVE_CICLO) !== ciclo;
     const mostrar = () => {
       if (document.visibilityState !== "visible") return;
       const lista = consejosRef.current;
@@ -127,15 +133,19 @@ export default function ConsejoEmergente({ permitido, activos, onApagar, hogar, 
       indice.current += 1;
       guardar(LLAVE_INDICE, String(indice.current));
       setCerrando(false);
-      setVisible(c);
+      setVisible({ ...c, quincena: pendienteQuincena });
+      if (pendienteQuincena && ciclo) {
+        guardar(LLAVE_CICLO, ciclo);
+        pendienteQuincena = false;
+      }
       window.clearTimeout(ocultarEn);
       ocultarEn = window.setTimeout(ocultar, VISIBLE_MS);
     };
-    const primero = window.setTimeout(mostrar, ESPERA_INICIAL_MS);
-    const ciclo = window.setInterval(mostrar, ENTRE_AVISOS_MS);
+    const primero = window.setTimeout(mostrar, pendienteQuincena ? 3_000 : ESPERA_INICIAL_MS);
+    const repetir = window.setInterval(mostrar, ENTRE_AVISOS_MS);
     return () => {
       window.clearTimeout(primero);
-      window.clearInterval(ciclo);
+      window.clearInterval(repetir);
       window.clearTimeout(ocultarEn);
     };
   }, [activos, permitido, ocultar]);
@@ -146,7 +156,7 @@ export default function ConsejoEmergente({ permitido, activos, onApagar, hogar, 
     <aside className={"consejo-emergente" + (cerrando ? " saliendo" : "")} role="status" aria-live="polite" aria-label="Consejo de ahorro">
       <div className="consejo-icono" style={{ background: visible.tono }} aria-hidden="true">{visible.icono}</div>
       <div className="consejo-cuerpo">
-        <span className="section-kicker">CONSEJO DE AHORRO</span>
+        <span className="section-kicker">{visible.quincena ? "CONSEJO DE LA QUINCENA" : "CONSEJO DE AHORRO"}</span>
         <strong>{visible.titulo}</strong>
         <p>{visible.texto}</p>
         <button className="text-button" onClick={onApagar}>No mostrar más consejos</button>
