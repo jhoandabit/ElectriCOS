@@ -8,7 +8,17 @@ import type { PostgrestError } from "@supabase/supabase-js";
 import type { LineaBase, Registro } from "../calculos/motor";
 import { PARAMETROS_POR_DEFECTO, type Parametro } from "../calculos/parametros";
 import type { DatosFactura, FuenteLectura } from "../factura/tipos";
+import { almacenLocal } from "../local/almacen";
+import { encolar, fusionar, listarPendientes, sincronizar, type EstadoSync, type ResultadoSync } from "../local/pendientes";
 import { supabase } from "./cliente";
+
+const local = almacenLocal();
+
+/** ¿El fallo es de conexión (sin señal, datos lentos) y no un rechazo del servidor? */
+export function esErrorDeRed(e: unknown): boolean {
+  const m = String((e as { message?: string } | null)?.message ?? e ?? "");
+  return /failed to fetch|load failed|networkerror|network request failed|fetch failed|timeout|offline/i.test(m) || (typeof navigator !== "undefined" && navigator.onLine === false);
+}
 
 export type Hogar = {
   id: string;
@@ -29,6 +39,9 @@ export type RegistroConsumo = {
   lectura_actual: number | null;
   valor_kwh: number | null;
   fuente: "manual" | "factura" | "historico";
+  /** Solo en el dispositivo hasta que haya conexión (pending_sync) o rechazado (sync_error). */
+  estado?: EstadoSync;
+  error?: string;
 };
 
 export type Meta = {
@@ -81,7 +94,15 @@ export async function obtenerHogar(): Promise<Hogar | null> {
     .order("created_at", { ascending: true })
     .limit(1)
     .maybeSingle();
-  if (error) traducir(error, "cargar tu hogar");
+  if (error) {
+    // Sin conexión se usa la última copia del hogar guardada en este dispositivo.
+    if (esErrorDeRed(error)) {
+      const copia = await local.leer<Hogar>("cache", "hogar");
+      if (copia) return copia;
+    }
+    traducir(error, "cargar tu hogar");
+  }
+  if (data) await local.escribir("cache", "hogar", data);
   return data;
 }
 
@@ -101,8 +122,16 @@ export async function listarRegistros(hogarId: string): Promise<RegistroConsumo[
     .select("id, periodo, consumo_kwh, dias, lectura_anterior, lectura_actual, valor_kwh, fuente")
     .eq("household_id", hogarId)
     .order("periodo", { ascending: true });
-  if (error) traducir(error, "cargar el historial");
-  return (data ?? []).map((r) => ({
+  const pendientes = await listarPendientes(local, hogarId);
+  if (error) {
+    // Sin conexión: la última lista guardada + lo que está esperando para enviarse.
+    if (esErrorDeRed(error)) {
+      const copia = await local.leer<RegistroConsumo[]>("cache", `registros:${hogarId}`);
+      if (copia || pendientes.length) return fusionar(copia ?? [], pendientes);
+    }
+    traducir(error, "cargar el historial");
+  }
+  const remotos = (data ?? []).map((r) => ({
     ...r,
     periodo: aMes(r.periodo),
     consumo_kwh: Number(r.consumo_kwh),
@@ -110,9 +139,39 @@ export async function listarRegistros(hogarId: string): Promise<RegistroConsumo[
     lectura_actual: num(r.lectura_actual),
     valor_kwh: num(r.valor_kwh),
   }));
+  await local.escribir("cache", `registros:${hogarId}`, remotos);
+  return fusionar(remotos, pendientes);
 }
 
-export type NuevoRegistro = Omit<RegistroConsumo, "id">;
+/**
+ * Envía a Supabase lo que quedó guardado en el dispositivo por falta de conexión.
+ * Es seguro repetirlo: el servidor hace upsert por (hogar, mes), no duplica.
+ */
+export async function sincronizarPendientes(hogarId: string): Promise<ResultadoSync> {
+  return sincronizar(
+    local,
+    hogarId,
+    async (p) => {
+      const fila = {
+        household_id: hogarId,
+        periodo: aFecha(p.periodo),
+        consumo_kwh: p.consumo_kwh,
+        dias: p.dias,
+        lectura_anterior: p.lectura_anterior,
+        lectura_actual: p.lectura_actual,
+        valor_kwh: p.valor_kwh,
+        fuente: p.fuente,
+      };
+      const { error } = await supabase()
+        .from("consumption_records")
+        .upsert(fila, { onConflict: "household_id,periodo", ignoreDuplicates: p.soloSiNoExiste });
+      if (error) throw error;
+    },
+    esErrorDeRed
+  );
+}
+
+export type NuevoRegistro = Omit<RegistroConsumo, "id" | "estado" | "error">;
 
 /** Guarda (o reemplaza) el consumo de un mes. */
 export async function guardarRegistro(hogarId: string, r: NuevoRegistro): Promise<string> {
@@ -121,7 +180,14 @@ export async function guardarRegistro(hogarId: string, r: NuevoRegistro): Promis
     .upsert({ ...r, periodo: aFecha(r.periodo), household_id: hogarId }, { onConflict: "household_id,periodo" })
     .select("id")
     .single();
-  if (error) traducir(error, "guardar el consumo");
+  if (error) {
+    // Sin conexión no se pierde nada: queda en el dispositivo y se envía solo al volver la señal.
+    if (esErrorDeRed(error)) {
+      await encolar(local, hogarId, r, false);
+      return `local:${r.periodo}`;
+    }
+    traducir(error, "guardar el consumo");
+  }
   return data.id;
 }
 
@@ -139,11 +205,20 @@ export async function importarHistorico(hogarId: string, puntos: { periodo: stri
     .from("consumption_records")
     .upsert(filas, { onConflict: "household_id,periodo", ignoreDuplicates: true })
     .select("id");
-  if (error) traducir(error, "importar el histórico");
+  if (error) {
+    if (esErrorDeRed(error)) {
+      for (const p of puntos) {
+        await encolar(local, hogarId, { periodo: p.periodo, consumo_kwh: p.kwh, dias: p.dias ?? null, lectura_anterior: null, lectura_actual: null, valor_kwh: null, fuente: "historico" }, true);
+      }
+      return puntos.length;
+    }
+    traducir(error, "importar el histórico");
+  }
   return data?.length ?? 0;
 }
 
 export async function borrarRegistro(id: string) {
+  if (id.startsWith("local:")) throw new Error("Ese mes todavía no se ha enviado: espera a tener conexión para poder borrarlo.");
   const { error } = await supabase().from("consumption_records").delete().eq("id", id);
   if (error) traducir(error, "borrar el registro");
 }
@@ -157,6 +232,8 @@ export async function registrarFactura(
   extraidos: DatosFactura,
   confirmados: NuevoRegistro
 ) {
+  // Sin conexión el consumo aún no existe en el servidor: no hay a qué enlazar la traza.
+  if (registroId.startsWith("local:")) return;
   // Solo datos de consumo: nada de nombres, direcciones ni números de cuenta.
   const { error } = await supabase().from("invoices").insert({
     household_id: hogarId,

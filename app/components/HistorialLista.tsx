@@ -56,6 +56,7 @@ export default function HistorialLista({ registros, onCambio }: { registros: Reg
                 <div>
                   <strong>{nombreMes(r.periodo)}</strong>
                   <small>
+                    {r.estado === "pending_sync" ? "⏳ Sin enviar · " : r.estado === "sync_error" ? "⚠ No aceptado · " : ""}
                     {FUENTE[r.fuente]}
                     {r.dias ? ` · ${r.dias} días · ${co(redondear(kwhMesNormalizado({ periodo: r.periodo, kwh: r.consumo_kwh, dias: r.dias })))} kWh en 30 días` : ""}
                   </small>

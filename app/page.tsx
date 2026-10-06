@@ -26,6 +26,7 @@ import {
   obtenerHogar,
   obtenerMetaActiva,
   obtenerParametros,
+  sincronizarPendientes,
   type Hogar,
   type Meta,
   type RegistroConsumo,
@@ -73,7 +74,9 @@ export default function App() {
 
   // ---------- Datos del hogar ----------
   const cargarDatos = useCallback(async (h: Hogar) => {
-    const [r, m] = await Promise.all([listarRegistros(h.id), obtenerMetaActiva(h.id)]);
+    // Primero se envía lo que quedó guardado en el dispositivo por falta de conexión (si lo hay).
+    await sincronizarPendientes(h.id).catch(() => null);
+    const [r, m] = await Promise.all([listarRegistros(h.id), obtenerMetaActiva(h.id).catch(() => null)]);
     setRegistros(r);
     // Si se borraron los meses de su línea base, la meta ya no tiene contra
     // qué compararse: se cierra (queda guardada como "cerrada", no se borra).
@@ -92,6 +95,15 @@ export default function App() {
 
   const recargar = useCallback(async () => {
     if (hogar) await cargarDatos(hogar);
+  }, [hogar, cargarDatos]);
+
+  // Al volver la conexión se envían los meses pendientes y se refresca todo.
+  useEffect(() => {
+    const alVolver = () => {
+      if (hogar) void cargarDatos(hogar);
+    };
+    window.addEventListener("online", alVolver);
+    return () => window.removeEventListener("online", alVolver);
   }, [hogar, cargarDatos]);
 
   useEffect(() => {
@@ -185,6 +197,24 @@ export default function App() {
   const seccion: Seccion = vista === "factura" || vista === "formulario" ? "consumo" : vista === "hogar" ? "inicio" : vista;
   const nav = <BottomNav activa={seccion} onIr={(s) => ir(s)} />;
   const errorGlobal = error && <div className="error-message" role="alert">{error}</div>;
+  const esperando = registros.filter((r) => r.estado === "pending_sync").length;
+  const rechazados = registros.filter((r) => r.estado === "sync_error");
+  const avisoSync = (esperando > 0 || rechazados.length > 0) && (
+    <div className="info-note" role="status">
+      {esperando > 0 && (
+        <>
+          <strong>Sin conexión</strong>
+          <span>{esperando === 1 ? "1 mes está guardado en este celular y" : `${esperando} meses están guardados en este celular y`} se enviará solo cuando vuelva internet.</span>
+        </>
+      )}
+      {rechazados.length > 0 && (
+        <>
+          <strong>Revisa {rechazados.length === 1 ? "un mes" : `${rechazados.length} meses`}</strong>
+          <span>El servidor no aceptó: {rechazados.map((r) => `${r.periodo} (${r.error ?? "dato inválido"})`).join(", ")}. Bórralos y vuelve a registrarlos.</span>
+        </>
+      )}
+    </div>
+  );
 
   switch (vista) {
     case "factura":
@@ -232,6 +262,7 @@ export default function App() {
       return (
         <Pantalla titulo="Consumo" icono="▣" pie={nav}>
           {errorGlobal}
+          {avisoSync}
           <ConsumoScreen
             registros={registros}
             onFactura={() => { setLectura(null); ir("factura"); }}
@@ -266,6 +297,7 @@ export default function App() {
           pie={nav}
         >
           {errorGlobal}
+          {avisoSync}
           {aviso && (
             <div className="info-note" role="status">
               <strong>Meta cerrada</strong>
