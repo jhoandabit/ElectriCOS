@@ -1,6 +1,7 @@
 "use client";
 
 import { ChangeEvent, useEffect, useRef, useState } from "react";
+import { miniaturaFoto } from "../lib/factura/archivos";
 import { leerFactura } from "../lib/factura/leer-factura";
 import { leerRecuadro, type Recuadro, type ResultadoGuiado } from "../lib/factura/ocr-guiado";
 import { precargarLector } from "../lib/factura/ocr-paddle";
@@ -114,8 +115,18 @@ export default function InvoiceScanner({ onUsar, recargada = false }: Props) {
 
     const ultimo = files[files.length - 1];
     setArchivo(ultimo);
-    // Se muestra la foto original: se ve nítida y la lectura guiada la usa.
-    setVistaPrevia(pdf ? "" : URL.createObjectURL(ultimo));
+    // Se muestra una miniatura liviana (la foto original de 12 MP hacía que Safari
+    // cerrara la página al terminar la lectura). La lectura y el recorte de la
+    // lectura guiada usan la foto original. Si la miniatura falla, se usa la original.
+    let vista = "";
+    if (!pdf) {
+      try {
+        vista = URL.createObjectURL(await miniaturaFoto(ultimo));
+      } catch {
+        vista = URL.createObjectURL(ultimo);
+      }
+    }
+    setVistaPrevia(vista);
     setGuiaAbierta(false);
     setRecuadro(null);
     setGuiado(null);
