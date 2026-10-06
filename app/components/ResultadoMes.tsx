@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { calcularLineaBase, comparacionConPromedio, comparacionSubsistencia, huellaKg, kwhMesNormalizado } from "../lib/calculos/motor";
+import { calcularLineaBase, comparacionConPromedio, comparacionSubsistencia, huellaKg, kwhMesNormalizado, subsidioMaximo } from "../lib/calculos/motor";
+import { SUBSIDIO_MAXIMO_POR_ESTRATO } from "../lib/calculos/parametros";
 import type { Parametro } from "../lib/calculos/parametros";
 import { paraMotor, type Hogar, type RegistroConsumo } from "../lib/supabase/datos";
 import { nombreMes } from "./formato";
@@ -21,7 +22,7 @@ const precio = (n: number) => "$" + n.toLocaleString("es-CO", { minimumFractionD
 /** Frase sobre el subsidio o la contribución según el estrato (Ley 142 de 1994). */
 function fraseEstrato(estrato: number, subsistencia: number) {
   if (estrato <= 3) {
-    return `En estrato ${estrato}, el Gobierno ayuda a pagar (subsidio) solo los primeros ${subsistencia} kWh. Lo que pase de ahí se paga a precio completo.`;
+    return `En estrato ${estrato}, el Estado ayuda a pagar (subsidio) hasta el ${SUBSIDIO_MAXIMO_POR_ESTRATO[estrato]} % de la tarifa, y solo en los primeros ${subsistencia} kWh. Lo que pase de ahí se paga a precio completo. El porcentaje real está impreso en tu factura ("% Subsidio").`;
   }
   if (estrato === 4) return "En estrato 4 no hay subsidio ni recargo: toda la energía se paga a precio normal.";
   return `En estrato ${estrato} se paga un recargo del 20 % (contribución) que ayuda a pagar los subsidios de los estratos 1, 2 y 3.`;
@@ -67,6 +68,7 @@ export default function ResultadoMes({ registro, hogar, registros, parametros }:
   const vsSub = comparacionSubsistencia(normalizado, hogar.sobre_1000_msnm, parametros.subsistencia_bajo_1000.valor, parametros.subsistencia_sobre_1000.valor);
   const veces = normalizado / vsSub.referencia;
   const costo = registro.valor_kwh ? kwh * registro.valor_kwh : null;
+  const subsidio = registro.valor_kwh ? subsidioMaximo(hogar.estrato, kwh, subsistencia.valor, registro.valor_kwh) : null;
   const tieneLecturas = registro.lectura_anterior !== null && registro.lectura_actual !== null;
   const escala = Math.max(normalizado, vsSub.referencia) * 1.05; // barras "lo básico vs. tu casa"
 
@@ -103,12 +105,18 @@ export default function ResultadoMes({ registro, hogar, registros, parametros }:
             icono: "💵",
             pregunta: "¿Cuánto costó?",
             valor: pesos(costo),
-            sub: dias ? `unos ${pesos(costo / dias)} por día` : "solo la energía",
+            sub: subsidio ? `a tarifa plena · con subsidio hasta ${pesos(costo - subsidio.pesos)}` : dias ? `unos ${pesos(costo / dias)} por día` : "solo la energía",
             detalle: (
               <>
                 <p className="cuenta">
                   Cada kWh costó {precio(registro.valor_kwh!)}: {num(kwh)} × {precio(registro.valor_kwh!)} ≈ <b>{pesos(costo)}</b>
                 </p>
+                {subsidio && (
+                  <p className="cuenta">
+                    Subsidio (estrato {hogar.estrato}): hasta el <b>{subsidio.porcentaje} %</b> sobre los primeros {num(subsidio.kwhSubsidiados, 0)} kWh = hasta{" "}
+                    <b>{pesos(subsidio.pesos)}</b> menos. Con ese máximo pagarías unos <b>{pesos(costo - subsidio.pesos)}</b>. El descuento real es el % que trae tu factura.
+                  </p>
+                )}
                 <p>Es solo la energía. El total de la factura también cobra otras cosas, como alumbrado público y aseo.</p>
               </>
             ),

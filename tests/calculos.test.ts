@@ -97,3 +97,15 @@ test("la meta pierde su línea base si se borran sus meses", () => {
   assert.equal(metaConLineaBase([], "2026-04", "2026-09"), false); // se borró todo
   assert.equal(metaConLineaBase(["2026-10", "2026-11", "2026-12"], "2026-04", "2026-09"), false); // meses nuevos no cuentan
 });
+
+import { subsidioMaximo } from "../app/lib/calculos/motor";
+
+test("subsidio máximo: estrato 1 hasta 60 %, 2 hasta 50 %, 3 hasta 15 %, solo sobre la subsistencia", () => {
+  // Factura real: 385 kWh, subsistencia 173, valor 905,0529 → 173 kWh subsidiados
+  assert.deepEqual(subsidioMaximo(1, 385, 173, 905.0529), { porcentaje: 60, kwhSubsidiados: 173, pesos: Math.round(173 * 905.0529 * 0.6) });
+  assert.equal(subsidioMaximo(2, 100, 173, 900)?.porcentaje, 50);
+  assert.equal(subsidioMaximo(2, 100, 173, 900)?.kwhSubsidiados, 100); // menos que la subsistencia
+  assert.equal(subsidioMaximo(3, 385, 173, 900)?.porcentaje, 15);
+  assert.equal(subsidioMaximo(4, 385, 173, 900), null);
+  assert.equal(subsidioMaximo(5, 385, 173, 900), null);
+});

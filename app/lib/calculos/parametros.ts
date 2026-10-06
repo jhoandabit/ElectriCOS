@@ -50,6 +50,13 @@ export const SUBSISTENCIA_SOBRE_1000: Parametro = {
   url: "https://gestornormativo.creg.gov.co/gestor/entorno/docs/resolucion_upme_0355_2004.htm",
 };
 
+/**
+ * Subsidio MÁXIMO sobre el consumo de subsistencia, por estrato (porcentaje de la tarifa).
+ * Es un tope ("hasta"): el porcentaje real lo fija cada empresa y viene impreso en la factura
+ * ("% Subsidio"; p. ej. -49,05 en una factura de estrato 1 de Cartago). Estratos 4, 5 y 6 no reciben.
+ */
+export const SUBSIDIO_MAXIMO_POR_ESTRATO: Record<number, number> = { 1: 60, 2: 50, 3: 15 };
+
 export const PARAMETROS_POR_DEFECTO: Parametro[] = [FACTOR_EMISION_SIN, SUBSISTENCIA_BAJO_1000, SUBSISTENCIA_SOBRE_1000];
 
 /**

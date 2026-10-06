@@ -1512,3 +1512,23 @@ button:disabled {
   margin: 0;
   font-weight: 700;
 }
+
+/* Celebración al cumplir una meta */
+.logro-card {
+  background: linear-gradient(160deg, #fff7ec 0%, #fdeedd 100%);
+  border: 1px solid #f2d6b8;
+  border-radius: 20px;
+  padding: 24px 20px;
+  text-align: center;
+  display: grid;
+  gap: 12px;
+}
+.logro-card h2 { margin: 0; font-size: 1.6rem; }
+.logro-card p { margin: 0; }
+.logro-emoji { font-size: 3.2rem; animation: logro-salto 0.9s ease-out 2; }
+@keyframes logro-salto {
+  0% { transform: scale(0.6) rotate(-12deg); opacity: 0; }
+  60% { transform: scale(1.25) rotate(8deg); opacity: 1; }
+  100% { transform: scale(1) rotate(0); }
+}
+@media (prefers-reduced-motion: reduce) { .logro-emoji { animation: none; } }

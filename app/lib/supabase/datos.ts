@@ -237,6 +237,16 @@ export async function actualizarAccionesHechas(metaId: string, hechas: string[])
   if (error) traducir(error, "actualizar las acciones");
 }
 
+/** Cuántas metas ha cumplido el hogar (para mostrar su logro). */
+export async function contarMetasCumplidas(hogarId: string): Promise<number> {
+  const { count, error } = await supabase()
+    .from("reduction_goals")
+    .select("id", { count: "exact", head: true })
+    .eq("household_id", hogarId)
+    .eq("estado", "cumplida");
+  return error ? 0 : count ?? 0;
+}
+
 export async function cerrarMeta(metaId: string, estado: "cumplida" | "cerrada") {
   const { error } = await supabase().from("reduction_goals").update({ estado }).eq("id", metaId);
   if (error) traducir(error, "cerrar la meta");

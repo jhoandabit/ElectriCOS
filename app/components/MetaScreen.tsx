@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
-import { calcularLineaBase, calcularMeta, huellaKg, MESES_MINIMOS_LINEA_BASE, redondear } from "../lib/calculos/motor";
+import { useEffect, useState } from "react";
+import { calcularLineaBase, calcularMeta, evaluarAvance, huellaKg, MESES_MINIMOS_LINEA_BASE, redondear } from "../lib/calculos/motor";
 import type { Parametro } from "../lib/calculos/parametros";
 import { CATALOGO_ACCIONES } from "../lib/calculos/recomendaciones";
 import {
   actualizarAccionesHechas,
   cerrarMeta,
+  contarMetasCumplidas,
   crearMeta,
   paraMotor,
   type Hogar,
@@ -33,6 +34,13 @@ export default function MetaScreen({ hogar, registros, meta, parametros, onCambi
   const [ocupado, setOcupado] = useState(false);
   const [porCerrar, setPorCerrar] = useState<"cumplida" | "cerrada" | null>(null);
   const factor = parametros.factor_emision_sin.valor;
+  // Al marcar la meta como cumplida la meta activa desaparece: sin esto la pantalla volvía a "proponer meta"
+  // y parecía que no había pasado nada. Se guarda un resumen para celebrarlo.
+  const [logro, setLogro] = useState<{ meta: number; base: number; meses: number; cumplieron: number; kwh: number; kg: number; promedio: number } | null>(null);
+  const [cumplidas, setCumplidas] = useState(0);
+  useEffect(() => {
+    void contarMetasCumplidas(hogar.id).then(setCumplidas);
+  }, [hogar.id, meta, logro]);
 
   const ejecutar = async (tarea: () => Promise<void>) => {
     setOcupado(true);
@@ -47,6 +55,31 @@ export default function MetaScreen({ hogar, registros, meta, parametros, onCambi
     }
   };
 
+  // ---------- Celebración al cumplir la meta ----------
+  if (logro && !meta) {
+    return (
+      <>
+        <section className="logro-card" role="status">
+          <div className="logro-emoji" aria-hidden="true">🎉</div>
+          <span className="section-kicker">META CUMPLIDA</span>
+          <h2>¡Lo lograron!</h2>
+          <p>
+            La meta era <b>{logro.meta} kWh/mes</b> (la línea base era {logro.base} kWh).
+            {logro.meses > 0 ? ` Registraron ${logro.meses} ${logro.meses === 1 ? "mes" : "meses"} y en ${logro.cumplieron} lo cumplieron; su promedio fue ${logro.promedio} kWh.` : ""}
+          </p>
+          {logro.meses > 0 && logro.kwh > 0 && (
+            <div className="stat-grid">
+              <div className="stat"><span>Energía ahorrada</span><strong>{logro.kwh} kWh</strong></div>
+              <div className="stat"><span>Contaminación evitada</span><strong>{logro.kg} kg CO₂e</strong></div>
+            </div>
+          )}
+          <p className="metric-note">Cuidar la energía en casa también cuida el clima. ¡Gracias por hacerlo en familia!</p>
+          <button className="primary-button full-button" onClick={() => setLogro(null)}>Proponer una nueva meta</button>
+        </section>
+      </>
+    );
+  }
+
   // ---------- Hay una meta activa ----------
   if (meta) {
     const ultimos = registros.filter((r) => r.periodo >= meta.inicio);
@@ -58,6 +91,18 @@ export default function MetaScreen({ hogar, registros, meta, parametros, onCambi
     };
     const cerrar = (estado: "cumplida" | "cerrada") => {
       setPorCerrar(null);
+      if (estado === "cumplida") {
+        const avance = evaluarAvance(paraMotor(registros), meta.linea_base.promedio_kwh, meta.meta_kwh, meta.inicio, factor);
+        setLogro({
+          meta: meta.meta_kwh,
+          base: meta.linea_base.promedio_kwh,
+          meses: avance.length,
+          cumplieron: avance.filter((a) => a.cumple).length,
+          kwh: redondear(avance.reduce((t, a) => t + a.ahorroKwh, 0)),
+          kg: redondear(avance.reduce((t, a) => t + a.ahorroKgCo2e, 0)),
+          promedio: avance.length ? redondear(avance.reduce((t, a) => t + a.kwh, 0) / avance.length) : meta.meta_kwh,
+        });
+      }
       void ejecutar(() => cerrarMeta(meta.id, estado));
     };
 
@@ -138,6 +183,9 @@ export default function MetaScreen({ hogar, registros, meta, parametros, onCambi
   }
 
   const metaKwh = calcularMeta(lineaBase.promedio, porcentaje);
+  const insignia = cumplidas > 0 && (
+    <p className="metric-note" aria-label="Metas cumplidas">🏅 Metas cumplidas por este hogar: <b>{cumplidas}</b></p>
+  );
   const inicio = mesSiguiente(lineaBase.hasta);
   const alternarNueva = (a: string) => setAcciones((x) => (x.includes(a) ? x.filter((y) => y !== a) : [...x, a]));
 
@@ -163,6 +211,7 @@ export default function MetaScreen({ hogar, registros, meta, parametros, onCambi
           </div>
         </div>
         <p className="metric-note">Valores llevados a meses de 30 días, con los últimos {lineaBase.meses} meses.</p>
+        {insignia}
       </section>
 
       <section className="form-card">
