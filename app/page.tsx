@@ -8,6 +8,7 @@ import type { Session } from "@supabase/supabase-js";
 import { useCallback, useEffect, useState } from "react";
 import AuthScreen from "./components/AuthScreen";
 import BottomNav, { type Seccion } from "./components/BottomNav";
+import ConsejoEmergente, { usarConsejosActivos } from "./components/ConsejoEmergente";
 import ConsumoForm from "./components/ConsumoForm";
 import ConsumoScreen from "./components/ConsumoScreen";
 import HogarForm from "./components/HogarForm";
@@ -47,6 +48,7 @@ export default function App() {
   const [error, setError] = useState("");
   const [aviso, setAviso] = useState("");
   const [recargada, setRecargada] = useState(false);
+  const [consejosActivos, setConsejosActivos] = usarConsejosActivos();
 
   // iPhone: si Safari recargó la página mientras la cámara estaba abierta,
   // se vuelve a "Leer factura" (y no a Inicio, como si nada hubiera pasado).
@@ -195,7 +197,20 @@ export default function App() {
 
   // ---------- App ----------
   const seccion: Seccion = vista === "factura" || vista === "formulario" ? "consumo" : vista === "hogar" ? "inicio" : vista;
-  const nav = <BottomNav activa={seccion} onIr={(s) => ir(s)} />;
+  const nav = (
+    <>
+      <BottomNav activa={seccion} onIr={(s) => ir(s)} />
+      <ConsejoEmergente
+        permitido={vista !== "factura" && vista !== "formulario" && vista !== "hogar"}
+        activos={consejosActivos}
+        onApagar={() => setConsejosActivos(false)}
+        hogar={hogar}
+        registros={registros}
+        meta={meta}
+        parametros={parametros}
+      />
+    </>
+  );
   const errorGlobal = error && <div className="error-message" role="alert">{error}</div>;
   const esperando = registros.filter((r) => r.estado === "pending_sync").length;
   const rechazados = registros.filter((r) => r.estado === "sync_error");
@@ -254,6 +269,10 @@ export default function App() {
       return (
         <Pantalla titulo="Mi hogar" icono="⌂" onVolver={() => ir("inicio")} pie={nav}>
           <HogarForm hogar={hogar} onGuardado={(h) => { setHogar(h); ir("inicio"); }} onCancelar={() => ir("inicio")} />
+          <label className="check-row">
+            <input type="checkbox" checked={consejosActivos} onChange={(e) => setConsejosActivos(e.target.checked)} />
+            <span>Mostrar consejos de ahorro mientras uso la app</span>
+          </label>
           <button className="secondary-button full-button" onClick={salir}>Cerrar sesión</button>
         </Pantalla>
       );

@@ -1532,3 +1532,42 @@ button:disabled {
   100% { transform: scale(1) rotate(0); }
 }
 @media (prefers-reduced-motion: reduce) { .logro-emoji { animation: none; } }
+
+/* Consejos de ahorro emergentes (encima de la barra de navegación) */
+.consejo-emergente {
+  position: fixed;
+  z-index: 30;
+  left: 50%;
+  bottom: calc(86px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  width: min(calc(100% - 24px), 520px);
+  display: grid;
+  grid-template-columns: 52px 1fr auto;
+  gap: 12px;
+  align-items: start;
+  padding: 14px 12px 16px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: 0 18px 44px rgba(31, 43, 56, 0.2);
+  overflow: hidden;
+  animation: consejo-entra 0.35s ease-out;
+}
+.consejo-emergente.saliendo { animation: consejo-sale 0.25s ease-in forwards; }
+.consejo-icono { width: 52px; height: 52px; border-radius: 16px; display: grid; place-items: center; font-size: 1.9rem; }
+.consejo-cuerpo { display: grid; gap: 4px; min-width: 0; }
+.consejo-cuerpo strong { font-size: 1rem; color: var(--fg); }
+.consejo-cuerpo p { margin: 0; font-size: 0.9rem; line-height: 1.35; color: var(--muted); }
+.consejo-cuerpo .text-button { justify-self: start; font-size: 0.8rem; padding: 4px 0; }
+.consejo-barra {
+  position: absolute; left: 0; bottom: 0; height: 3px; width: 100%;
+  background: var(--accent-vivo); transform-origin: left;
+  animation-name: consejo-barra; animation-timing-function: linear; animation-fill-mode: forwards;
+}
+@keyframes consejo-entra { from { opacity: 0; transform: translate(-50%, 24px); } to { opacity: 1; transform: translate(-50%, 0); } }
+@keyframes consejo-sale { to { opacity: 0; transform: translate(-50%, 24px); } }
+@keyframes consejo-barra { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+@media (prefers-reduced-motion: reduce) {
+  .consejo-emergente, .consejo-emergente.saliendo { animation: none; }
+  .consejo-barra { animation: none; transform: scaleX(0); }
+}
