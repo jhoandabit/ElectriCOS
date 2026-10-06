@@ -50,19 +50,21 @@ function filaMedidor(t: string): Partial<DatosEstructura> | null {
 }
 
 /**
- * Energía de Pereira rotula cada fila del histórico por el mes de EMISIÓN de la
- * factura; ElectriCOs nombra el periodo por el mes en que TERMINA. Si las filas son
- * meses seguidos y la última lleva el mismo mes que el periodo actual (p. ej. periodo
- * 29/AGO–28/SEP, emitida en octubre, con filas ABR…SEP), esa fila no puede ser el
- * propio mes actual: son los periodos ANTERIORES y todas se corren un mes atrás.
- * Sin periodo conocido, o sin esa coincidencia, no se toca nada.
+ * Energía de Pereira rotula cada fila del histórico por el mes de EMISIÓN de la factura
+ * y el periodo actual es el mes SIGUIENTE a la última fila. Referencia: filas MAR…AGO,
+ * periodo SEP (emitida 14/SEP). Estrato 1: filas ABR…SEP, periodo 29/AGO–28/SEP emitida
+ * 02/OCT → el periodo actual es OCT.
+ * El periodo por fechas (fin − 5 días) cae en el mismo mes de la última fila cuando el
+ * periodo termina a fin de mes (28/SEP → SEP). Si las filas son meses seguidos y la última
+ * coincide con ese mes, se respetan los rótulos impresos y se corre el periodo ACTUAL un
+ * mes adelante. Sin periodo conocido, o sin esa coincidencia, no se toca nada.
  */
-function corregirRotulos(meses: number[], periodo: string | undefined): number[] {
-  if (!periodo || meses.length < 2) return meses;
-  const mesActual = Number(periodo.split("-")[1]);
+function periodoSegunHistorico(meses: number[], periodo: string | undefined): string | undefined {
+  if (!periodo || meses.length < 2) return periodo;
+  const [anio, mesActual] = periodo.split("-").map(Number);
   const seguidos = meses.every((m, i) => i === 0 || (m - meses[i - 1] + 12) % 12 === 1);
-  if (!seguidos || meses[meses.length - 1] !== mesActual) return meses;
-  return meses.map((m) => (m === 1 ? 12 : m - 1));
+  if (!seguidos || meses[meses.length - 1] !== mesActual) return periodo;
+  return mesActual === 12 ? formatoPeriodo(anio + 1, 1) : formatoPeriodo(anio, mesActual + 1);
 }
 
 /**
@@ -110,13 +112,14 @@ function lecturasEnTabla(t: string): Partial<DatosEstructura> | null {
  *   SEP  NOV  ENE  MAR  MAY  JUL  Actual
  * Los días de cada periodo se deducen del salto entre meses (bimestral ≈ 61).
  */
-function historicoEnGrafico(t: string, periodo: string | undefined): PuntoHistorico[] {
+function historicoEnGrafico(t: string, periodo: string | undefined, ajuste?: { periodo?: string }): PuntoHistorico[] {
   const lineas = t.split("\n");
   for (let i = 1; i < lineas.length; i++) {
     const mesesLeidos = Array.from(lineas[i].matchAll(new RegExp(String.raw`\b(${MESES_CORTOS})\b`, "g"))).map((m) => mesDesdeTexto(m[1]) as number);
     // "Actual" (Celsia) o "ACT PROM" / "ACTPROM" (Energía de Pereira).
     if (mesesLeidos.length < 3 || !/\bactual\b|\bact\s*prom/.test(lineas[i])) continue;
-    const meses = corregirRotulos(mesesLeidos, periodo);
+    const meses = mesesLeidos;
+    const referencia = periodoSegunHistorico(mesesLeidos, periodo);
     // Los valores están unos renglones más arriba (entre ellos puede haber otros textos).
     for (const arriba of lineas.slice(Math.max(0, i - 4), i).reverse()) {
       let valores = Array.from(arriba.matchAll(/(\d{1,4})\s*kwh/g)).map((m) => Number(m[1]));
@@ -128,7 +131,8 @@ function historicoEnGrafico(t: string, periodo: string | undefined): PuntoHistor
         valores = sueltos.slice(0, meses.length + 1);
       }
       const hoy = new Date();
-      let [anio, mesRef] = periodo ? periodo.split("-").map(Number) : [hoy.getFullYear(), hoy.getMonth() + 1];
+      if (referencia !== periodo && ajuste) ajuste.periodo = referencia;
+      let [anio, mesRef] = referencia ? referencia.split("-").map(Number) : [hoy.getFullYear(), hoy.getMonth() + 1];
       const puntos: PuntoHistorico[] = [];
       for (let k = meses.length - 1; k >= 0; k--) {
         const mes = meses[k];
@@ -210,7 +214,7 @@ function totalFactura(t: string): number | null {
  * Tabla de consumos: "MAR  207  162,374  31" (mes, kWh, pesos, días).
  * Los años se deducen hacia atrás desde el periodo actual.
  */
-function tablaHistorico(t: string, periodo: string | undefined): PuntoHistorico[] {
+function tablaHistorico(t: string, periodo: string | undefined, ajuste?: { periodo?: string }): PuntoHistorico[] {
   // Los días son opcionales: si el OCR pierde esa columna se asumen 30.
   const patron = new RegExp(String.raw`\b(${MESES_CORTOS})[a-z]*\.?\s+(\d{1,4})\s+\$?[\d.,]{3,}(?:\s+(\d{2})\b)?`, "g");
   const filas: { mes: number; kwh: number; dias: number }[] = [];
@@ -222,11 +226,11 @@ function tablaHistorico(t: string, periodo: string | undefined): PuntoHistorico[
     if (!filas.some((f) => f.mes === mes)) filas.push({ mes, kwh, dias });
   }
   if (!filas.length) return [];
-  const rotulos = corregirRotulos(filas.map((f) => f.mes), periodo);
-  filas.forEach((f, i) => { f.mes = rotulos[i]; });
+  const referencia = periodoSegunHistorico(filas.map((f) => f.mes), periodo);
+  if (referencia !== periodo && ajuste) ajuste.periodo = referencia;
 
   const hoy = new Date();
-  let [anio, mesRef] = periodo ? periodo.split("-").map(Number) : [hoy.getFullYear(), hoy.getMonth() + 1];
+  let [anio, mesRef] = referencia ? referencia.split("-").map(Number) : [hoy.getFullYear(), hoy.getMonth() + 1];
   // Recorremos de la fila más reciente a la más antigua asignando años.
   const resultado: PuntoHistorico[] = [];
   for (let i = filas.length - 1; i >= 0; i--) {
@@ -263,9 +267,14 @@ export function extraerPorEstructura(textoOriginal: string): DatosEstructura {
   const total = totalFactura(t);
   if (total) datos.totalPagar = total;
 
-  const historico = tablaHistorico(t, datos.periodo);
-  const grafico = historicoEnGrafico(t, datos.periodo);
-  if (historico.length || grafico.length) datos.historico = historico.length >= grafico.length ? historico : grafico;
+  const ajuste: { periodo?: string } = {};
+  const historico = tablaHistorico(t, datos.periodo, ajuste);
+  const grafico = historicoEnGrafico(t, datos.periodo, ajuste);
+  if (historico.length || grafico.length) {
+    datos.historico = historico.length >= grafico.length ? historico : grafico;
+    // Los rótulos del histórico mandan: el periodo actual es el mes siguiente a la última fila.
+    if (ajuste.periodo) datos.periodo = ajuste.periodo;
+  }
 
   return datos;
 }
