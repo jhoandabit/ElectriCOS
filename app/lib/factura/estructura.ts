@@ -160,7 +160,10 @@ function municipioYUso(textoOriginal: string): string | null {
  * El OCR puede leer "CT0" como "CTo", "Cro" o "C70".
  */
 function estratoTrasTransformador(t: string): number | null {
-  const m = t.match(/\bc[tr7][o0]\d{3,5}\s+([1-6])\b/);
+  // Entre el transformador y el estrato pueden venir hasta dos porcentajes
+  // ("% Contribución", "% Subsidio": -49.05 en los estratos 1 a 3). El OCR a veces
+  // pierde el signo menos.
+  const m = t.match(/\bc[tr7][o0]\d{3,5}\s+(?:[-+]?\d{1,3}[.,]\d{1,2}\s+){0,2}([1-6])\b/);
   return m ? Number(m[1]) : null;
 }
 

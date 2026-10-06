@@ -291,3 +291,23 @@ test("Celsia en fotos por partes: cada parte aporta lo suyo y juntas dan la fact
     );
   }
 });
+
+// ---- Estrato con subsidio (factura EEP de estrato 1, 06/10/2026) ----
+// Datos sintéticos con la MISMA disposición de la factura real (sin nombre ni dirección).
+const MEDIDOR_E1 = "24672371  HIK  6300  5915  385  1  385  275";
+
+test("estrato 1: el % de subsidio entre el transformador y el estrato no impide leerlo", () => {
+  const casos = [
+    `147 Cartago  Residencial  102\nCT0123  -49.05  1\n${MEDIDOR_E1}`, // PDF: subsidio entre medio
+    `147 Cartago  Residencial  102\nCT0123\n-49.05  1  LF02\n${MEDIDOR_E1}`, // en dos renglones
+    `147 Cartago  Residencial  102\nCT0123  49.05  1\n${MEDIDOR_E1}`, // el OCR perdió el signo menos
+    `147 Cartago  Residencial  102\nCT0123  1\n${MEDIDOR_E1}`, // sin subsidio (como antes)
+  ];
+  for (const t of casos) {
+    const d = extraerDeTexto(t);
+    assert.equal(d.estrato, 1, t);
+    assert.equal(d.consumoKwh, 385);
+  }
+  // Lo que ya funcionaba sigue igual: estrato 4 sin subsidio.
+  assert.equal(extraerDeTexto(`147 Cartago  Residencial  108\nCT0172  4\n${MEDIDOR_E1}`).estrato, 4);
+});
