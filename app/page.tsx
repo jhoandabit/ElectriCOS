@@ -16,6 +16,7 @@ import InstalarApp from "./components/InstalarApp";
 import HomeScreen from "./components/HomeScreen";
 import InvoiceScanner, { MARCA_ELIGIENDO, type MetodoLectura } from "./components/InvoiceScanner";
 import MetaScreen from "./components/MetaScreen";
+import ProgramarRecordatorios from "./components/ProgramarRecordatorios";
 import Pantalla from "./components/Pantalla";
 import ProgresoScreen from "./components/ProgresoScreen";
 import { PARAMETROS_POR_DEFECTO, type Parametro } from "./lib/calculos/parametros";
@@ -201,6 +202,7 @@ export default function App() {
   const nav = (
     <>
       <BottomNav activa={seccion} onIr={(s) => ir(s)} />
+      <ProgramarRecordatorios activos={consejosActivos} />
       <ConsejoEmergente
         permitido={vista !== "factura" && vista !== "formulario" && vista !== "hogar"}
         activos={consejosActivos}

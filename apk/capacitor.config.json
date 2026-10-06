@@ -1,0 +1,13 @@
+{
+  "appId": "co.edu.iermb.electricos",
+  "appName": "ElectriCOs",
+  "webDir": "www",
+  "server": {
+    "url": "https://electri-cos.vercel.app",
+    "androidScheme": "https",
+    "cleartext": false
+  },
+  "android": {
+    "allowMixedContent": false
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "name": "electricos-apk",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Envoltorio Android (Capacitor) de ElectriCOs. La app real es la web: esta APK la abre y programa los recordatorios del día 10 y 20.",
+  "scripts": {
+    "sync": "cap sync android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.2.0",
+    "@capacitor/core": "^6.2.0",
+    "@capacitor/local-notifications": "^6.1.0"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^6.2.0"
+  }
+}

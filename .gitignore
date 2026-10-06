@@ -10,3 +10,7 @@ out/
 next-env.d.ts.bak
 public/ort/
 public/modelos/
+
+# APK (Capacitor)
+apk/node_modules
+apk/android

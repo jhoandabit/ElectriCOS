@@ -1,0 +1,50 @@
+name: Construir APK
+
+# Se ejecuta a mano (Actions → Construir APK → Run workflow). No publica nada: deja el APK como archivo descargable.
+on:
+  workflow_dispatch:
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apk
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Instalar dependencias
+        run: npm install --no-audit --no-fund
+
+      - name: Crear el proyecto Android
+        run: npx cap add android
+
+      - name: Permiso de notificaciones (Android 13+)
+        run: |
+          MANIFEST=android/app/src/main/AndroidManifest.xml
+          grep -q POST_NOTIFICATIONS "$MANIFEST" || sed -i 's#</manifest>#    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\n</manifest>#' "$MANIFEST"
+
+      - name: Iconos de la app
+        run: npx @capacitor/assets generate --android --assetPath assets || echo "::warning::No se generaron los iconos; la APK usará el icono por defecto"
+
+      - name: Sincronizar
+        run: npx cap sync android
+
+      - name: Compilar APK
+        working-directory: apk/android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: electricos-apk
+          path: apk/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
