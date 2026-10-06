@@ -2,6 +2,7 @@
 
 import { ChangeEvent, useEffect, useRef, useState } from "react";
 import { miniaturaFoto } from "../lib/factura/archivos";
+import { paso, reiniciarPasos, textoDiagnostico } from "../lib/factura/diagnostico";
 import { leerFactura } from "../lib/factura/leer-factura";
 import { leerRecuadro, type Recuadro, type ResultadoGuiado } from "../lib/factura/ocr-guiado";
 import { precargarLector } from "../lib/factura/ocr-paddle";
@@ -93,6 +94,31 @@ export default function InvoiceScanner({ onUsar, recargada = false }: Props) {
   useEffect(() => () => { if (vistaPrevia) URL.revokeObjectURL(vistaPrevia); }, [vistaPrevia]);
 
   const [partes, setPartes] = useState(0);
+  // Registro de pasos de la última lectura: si el celular recarga o cierra la página,
+  // aquí queda dónde fue (ver lib/factura/diagnostico.ts).
+  const [diagnostico, setDiagnostico] = useState("");
+  const [copiado, setCopiado] = useState(false);
+
+  useEffect(() => {
+    setDiagnostico(textoDiagnostico());
+    const alCambiar = () => paso(`página: ${document.visibilityState}`);
+    const alSalir = () => paso("página: pagehide");
+    document.addEventListener("visibilitychange", alCambiar);
+    window.addEventListener("pagehide", alSalir);
+    return () => {
+      document.removeEventListener("visibilitychange", alCambiar);
+      window.removeEventListener("pagehide", alSalir);
+    };
+  }, []);
+
+  const copiarDiagnostico = async () => {
+    try {
+      await navigator.clipboard.writeText(diagnostico);
+      setCopiado(true);
+    } catch {
+      setCopiado(false); // sin permiso: se puede mantener presionado el texto y copiarlo
+    }
+  };
 
   const esPdfArchivo = (f: File) => f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf");
 
@@ -114,6 +140,9 @@ export default function InvoiceScanner({ onUsar, recargada = false }: Props) {
     }
 
     const ultimo = files[files.length - 1];
+    const detalle = files.map((f) => `${Math.round(f.size / 1024)} KB ${f.type || "?"}`).join(", ");
+    if (sumar) paso(`agregar parte: ${detalle}`);
+    else reiniciarPasos(`archivo elegido: ${detalle}`);
     setArchivo(ultimo);
     // Se muestra una miniatura liviana (la foto original de 12 MP hacía que Safari
     // cerrara la página al terminar la lectura). La lectura y el recorte de la
@@ -127,6 +156,7 @@ export default function InvoiceScanner({ onUsar, recargada = false }: Props) {
       }
     }
     setVistaPrevia(vista);
+    paso("vista previa lista");
     setGuiaAbierta(false);
     setRecuadro(null);
     setGuiado(null);
@@ -154,11 +184,18 @@ export default function InvoiceScanner({ onUsar, recargada = false }: Props) {
       }
       setLectura(resultado);
       setMetodo(resultado.fuente);
-      if (!pdf && resultado.confianzaConsumo < 80 && n === 1) setGuiaAbierta(true);
+      paso(`resultado mostrado (confianza ${resultado.confianzaConsumo} %)`);
+      if (!pdf && resultado.confianzaConsumo < 80 && n === 1) {
+        paso("se abre la lectura guiada");
+        setGuiaAbierta(true);
+      }
     } catch (e) {
+      paso(`ERROR: ${(e as Error)?.message ?? e}`);
       setError(mensajeDeError(e));
     } finally {
       desmarcar();
+      setDiagnostico(textoDiagnostico());
+      setCopiado(false);
       setLeyendo(false);
       setEstado("");
     }
@@ -403,6 +440,16 @@ export default function InvoiceScanner({ onUsar, recargada = false }: Props) {
           <details className="ocr-details">
             <summary>Ver texto técnico reconocido</summary>
             <pre>{lectura.textoTecnico}</pre>
+          </details>
+        )}
+
+        {diagnostico && (
+          <details className="ocr-details">
+            <summary>Diagnóstico de la última lectura (para el equipo)</summary>
+            <pre>{diagnostico}</pre>
+            <button className="secondary-button full-button" type="button" onClick={copiarDiagnostico}>
+              {copiado ? "Copiado ✓" : "Copiar diagnóstico"}
+            </button>
           </details>
         )}
       </section>
