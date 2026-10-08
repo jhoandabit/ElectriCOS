@@ -28,10 +28,16 @@ jobs:
       - name: Crear el proyecto Android
         run: npx cap add android
 
-      - name: Permiso de notificaciones (Android 13+)
+      - name: Permisos de la app (notificaciones y cámara)
         run: |
           MANIFEST=android/app/src/main/AndroidManifest.xml
-          grep -q POST_NOTIFICATIONS "$MANIFEST" || sed -i 's#</manifest>#    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\n</manifest>#' "$MANIFEST"
+          # Notificaciones (Android 13+) y CÁMARA: sin el permiso de cámara declarado, el WebView ignora
+          # capture="environment" y el botón "Tomar foto" abre el selector de archivos.
+          for permiso in POST_NOTIFICATIONS CAMERA; do
+            grep -q "android.permission.$permiso" "$MANIFEST" || sed -i "s#</manifest>#    <uses-permission android:name=\"android.permission.$permiso\" />\n</manifest>#" "$MANIFEST"
+          done
+          grep -q "android.hardware.camera" "$MANIFEST" || sed -i 's#</manifest>#    <uses-feature android:name="android.hardware.camera" android:required="false" />\n</manifest>#' "$MANIFEST"
+          cat "$MANIFEST"
 
       - name: Iconos de la app
         run: npx @capacitor/assets generate --android --assetPath assets || echo "::warning::No se generaron los iconos; la APK usará el icono por defecto"
@@ -42,6 +48,12 @@ jobs:
       - name: Compilar APK
         working-directory: apk/android
         run: ./gradlew assembleDebug --no-daemon
+
+      - name: Comprobar permisos dentro de la APK
+        run: |
+          AAPT=$(ls $ANDROID_HOME/build-tools/*/aapt | sort -V | tail -1)
+          "$AAPT" dump permissions android/app/build/outputs/apk/debug/app-debug.apk | tee permisos.txt
+          grep -q "android.permission.CAMERA" permisos.txt || { echo "::error::La APK no declara el permiso de la cámara"; exit 1; }
 
       - uses: actions/upload-artifact@v4
         with:
