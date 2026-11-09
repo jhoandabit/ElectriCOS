@@ -100,6 +100,15 @@ function conocidoONada(candidato: string | null | undefined): string | null {
  * Ojo: textos legales como "…en los municipios de Buga, Cartago…" NO cuentan
  * como etiqueta (antes daban "Buga" en la factura de Celsia).
  */
+/** Posición de la última aparición de `palabra` como palabra completa (-1 si no está). */
+function ultimaPalabra(texto: string, palabra: string): number {
+  let ultima = -1;
+  for (const m of texto.matchAll(new RegExp(`(?:^|[^a-z])${palabra}(?![a-z])`, "g"))) {
+    ultima = (m.index ?? 0) + m[0].length - palabra.length;
+  }
+  return ultima;
+}
+
 function buscarMunicipio(t: string): string | null {
   const etiqueta = t.match(/\bmunicipi[oc0]\s*[:.]\s*(?:\d{1,5}\s*[-.]?\s*)?([a-z][a-z .]{2,30}?)(?=\s{2,}|\s*[-,:/(]|\s+(?:depto|departamento|ciclo|estrato|servicio|barrio|ruta|valle|risaralda|caldas)|\n|$)/);
   const deEtiqueta = conocidoONada(etiqueta?.[1]);
@@ -112,7 +121,7 @@ function buscarMunicipio(t: string): string | null {
 
   const direccion = t.match(/dir(?:eccion)?\.?\s*(?:del\s*)?inmueble\s*:?[^\n]*/);
   if (direccion) {
-    const enLinea = MUNICIPIOS_CONOCIDOS.map((nombre) => ({ nombre, pos: direccion[0].lastIndexOf(normalizarTexto(nombre)) }))
+    const enLinea = MUNICIPIOS_CONOCIDOS.map((nombre) => ({ nombre, pos: ultimaPalabra(direccion[0], normalizarTexto(nombre)) }))
       .filter((x) => x.pos >= 0)
       .sort((x, y) => y.pos - x.pos);
     if (enLinea.length) return enLinea[0].nombre;
@@ -120,7 +129,8 @@ function buscarMunicipio(t: string): string | null {
 
   let mejor: { nombre: string; veces: number } | null = null;
   for (const nombre of MUNICIPIOS_CONOCIDOS) {
-    const veces = t.split(normalizarTexto(nombre)).length - 1;
+    // Palabra completa: "cali" no debe contarse dentro de "calidad" ni "toro" dentro de otra palabra.
+    const veces = (t.match(new RegExp(`(?:^|[^a-z])${normalizarTexto(nombre)}(?![a-z])`, "g")) ?? []).length;
     if (veces > 0 && (!mejor || veces > mejor.veces)) mejor = { nombre, veces };
   }
   if (mejor) return mejor.nombre;

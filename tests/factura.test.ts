@@ -336,3 +336,16 @@ test("liquidación por tramos: con un solo tramo no se inventa un total", () => 
   const texto = "Consumo activa 120 kWh\n0-173  120  905.0529  108,603";
   assert.equal(extraerDeTexto(texto).consumoKwh, 120);
 });
+
+test("municipio: 'calidad' no cuenta como Cali; se queda Cartago", () => {
+  const texto = [
+    "Grupo calidad: 12   Circuito: SM02",
+    "CALIDAD DEL SERVICIO  calidad  calidad",
+    "Ruta: 01-21-029-1629 Cartago Servicio: Residencial",
+  ].join("\n");
+  assert.equal(extraerDeTexto(texto).municipio, "Cartago");
+});
+
+test("municipio: sigue reconociendo Cali cuando es la palabra completa", () => {
+  assert.equal(extraerDeTexto("Alcaldia municipal de Cali\nconsumo 200 kwh").municipio, "Cali");
+});
