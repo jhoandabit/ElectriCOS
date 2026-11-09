@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { detectarGiro, puntajeOrientacion, recuadroEnOriginal, puntoGirado, type Giro } from "../app/lib/factura/orientacion";
+import { detectarGiro, pareceDerecha, puntajeOrientacion, recuadroEnOriginal, puntoGirado, type Giro } from "../app/lib/factura/orientacion";
 
 const derecho = readFileSync(new URL("./fixtures/eep-factura-referencia.txt", import.meta.url), "utf8");
 const basura = "ilTtl  vVnu  ol11  l  Ie  mmm  oo|  X7  ~~  nOs  ; ,, 5l  Ob  ::  ///  r  H";
@@ -65,4 +65,17 @@ test("recuadro dibujado sobre la foto enderezada → recuadro equivalente en la 
     assert.ok(cerca(Math.min(...xs), r.x) && cerca(Math.max(...xs), r.x + r.ancho), `x en giro ${g}`);
     assert.ok(cerca(Math.min(...ys), r.y) && cerca(Math.max(...ys), r.y + r.alto), `y en giro ${g}`);
   }
+});
+
+test("pareceDerecha: texto de factura sí, basura no", () => {
+  assert.equal(pareceDerecha(derecho), true);
+  assert.equal(pareceDerecha(basura), false);
+  assert.equal(pareceDerecha(""), false);
+});
+
+test("con la foto ya leída sin girar, no se repite la lectura de prueba en 0°", async () => {
+  const llamadas: Giro[] = [];
+  const r = await detectarGiro(lectorQueEnderezaEn(270, llamadas), puntajeOrientacion(basura));
+  assert.equal(r.giro, 270);
+  assert.ok(!llamadas.includes(0), JSON.stringify(llamadas));
 });

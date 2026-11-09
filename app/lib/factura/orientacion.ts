@@ -23,6 +23,11 @@ export function puntajeOrientacion(texto: string): number {
 
 /** Con tantas palabras clave la foto se da por derecha y no se prueba nada más. */
 const SUFICIENTE = 3;
+/** ¿El texto leído tiene palabras de factura suficientes para dar la foto por derecha? */
+export function pareceDerecha(texto: string): boolean {
+  return puntajeOrientacion(texto) >= SUFICIENTE;
+}
+
 /** Un giro solo se acepta si mejora al menos en 2 palabras la foto tal como llegó. */
 const VENTAJA = 2;
 
@@ -33,10 +38,12 @@ const VENTAJA = 2;
  * abajo), 90° y 180°.
  */
 export async function detectarGiro(
-  leer: (giro: Giro) => Promise<string>
+  leer: (giro: Giro) => Promise<string>,
+  /** Puntaje de la foto sin girar, si ya se leyó completa (evita repetir esa lectura). */
+  puntajeSinGirar?: number
 ): Promise<{ giro: Giro; puntajes: Partial<Record<Giro, number>> }> {
   const puntajes: Partial<Record<Giro, number>> = {};
-  puntajes[0] = puntajeOrientacion(await leer(0));
+  puntajes[0] = puntajeSinGirar ?? puntajeOrientacion(await leer(0));
   if (puntajes[0] >= SUFICIENTE) return { giro: 0, puntajes };
 
   let mejor: Giro = 0;

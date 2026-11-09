@@ -12,7 +12,7 @@ import { paso } from "./diagnostico";
 import { extraerDeTexto } from "./extraer-texto";
 import { agruparEnRenglones, esErrorDeMemoria, esIOS, leerGraficoDeBarras, reconocer, reiniciarLector } from "./ocr-paddle";
 import { filasDeTabla, textoDeFila, zonaDelEstrato, type FilaTabla } from "./geometria";
-import { detectarGiro } from "./orientacion";
+import { detectarGiro, pareceDerecha, puntajeOrientacion } from "./orientacion";
 import type { AvisoLectura, DatosFactura, FuenteLectura, Giro, ResultadoLectura } from "./tipos";
 import { validarYCompletar } from "./validar";
 
@@ -183,15 +183,24 @@ export async function leerFactura(archivo: File, alProgresar: AlProgresar, texto
       let lienzo = foto.canvas;
       try {
         paso(`foto preparada para leer: ${foto.canvas.width}x${foto.canvas.height}`);
-        alProgresar("Revisando cómo quedó la foto…");
-        const { giro, puntajes } = await detectarGiro((g) => textoDePrueba(foto.canvas, g));
-        paso(`orientación: giro ${giro}° (puntajes ${JSON.stringify(puntajes)})`);
-        if (giro) {
-          alProgresar("La foto estaba de lado: enderezándola…");
-          lienzo = girarLienzo(foto.canvas, giro);
-          soltarLienzo(foto.canvas); // la versión sin girar ya no hace falta
+        // Lo normal es una foto derecha: se lee completa de una vez, sin la lectura de prueba.
+        // Solo si el texto no parece de una factura se revisa el giro y, si hace falta, se relee.
+        let nuevo = await leerImagen(lienzo, alProgresar);
+        let giro: Giro = 0;
+        if (!pareceDerecha(nuevo)) {
+          alProgresar("Revisando cómo quedó la foto…");
+          const r = await detectarGiro((g) => textoDePrueba(foto.canvas, g), puntajeOrientacion(nuevo));
+          giro = r.giro;
+          paso(`orientación: giro ${giro}° (puntajes ${JSON.stringify(r.puntajes)})`);
+          if (giro) {
+            alProgresar("La foto estaba de lado: enderezándola…");
+            lienzo = girarLienzo(foto.canvas, giro);
+            soltarLienzo(foto.canvas); // la versión sin girar ya no hace falta
+            nuevo = await leerImagen(lienzo, alProgresar);
+          }
+        } else {
+          paso("orientación: derecha (no hizo falta la lectura de prueba)");
         }
-        const nuevo = await leerImagen(lienzo, alProgresar);
         const texto = textoPrevio ? `${textoPrevio}\n${nuevo}` : nuevo;
         if (!nuevo.trim()) {
           avisos.push({
