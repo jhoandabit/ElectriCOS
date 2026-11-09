@@ -14,6 +14,7 @@
 import { cargarImagen, dimensiones, girarLienzo, soltarLienzo } from "./archivos";
 import { datosDeRecorte, type DatosRecorte } from "./extraer-texto";
 import { recuadroEnOriginal } from "./orientacion";
+import { paso } from "./diagnostico";
 import { agruparEnRenglones, reconocer } from "./ocr-paddle";
 import type { Giro } from "./tipos";
 
@@ -115,8 +116,10 @@ export async function leerRecuadro(
   giro: Giro = 0
 ): Promise<ResultadoGuiado> {
   alProgresar("Recortando la parte que encerraste…");
+  paso(`guiada: abre la foto original (${Math.round(archivo.size / 1024)} KB)`);
   const imagen = await cargarImagen(archivo);
   const { ancho, alto } = dimensiones(imagen);
+  paso(`guiada: foto original abierta ${ancho}x${alto}`);
   const o = recuadroEnOriginal(recuadro, giro);
   const sx = Math.round(o.x * ancho);
   const sy = Math.round(o.y * alto);
@@ -127,6 +130,7 @@ export async function leerRecuadro(
   const anchoDerecho = giro === 90 || giro === 270 ? sh : sw;
   const factor = Math.min(4, Math.max(1, 1600 / anchoDerecho));
   const recorteOriginal = document.createElement("canvas");
+  paso(`guiada: recorte ${sw}x${sh} ampliado x${factor.toFixed(2)}`);
   recorteOriginal.width = Math.round(sw * factor);
   recorteOriginal.height = Math.round(sh * factor);
   const ctx = recorteOriginal.getContext("2d");
@@ -136,6 +140,7 @@ export async function leerRecuadro(
   ctx.imageSmoothingQuality = "high";
   ctx.drawImage(imagen, sx, sy, sw, sh, 0, 0, recorteOriginal.width, recorteOriginal.height);
   if ("close" in imagen) imagen.close(); // soltar la foto completa enseguida
+  paso("guiada: foto original soltada");
   const recorte = girarLienzo(recorteOriginal, giro);
   if (recorte !== recorteOriginal) soltarLienzo(recorteOriginal);
   const recorteUrl = recorte.toDataURL("image/jpeg", 0.85);
@@ -143,6 +148,7 @@ export async function leerRecuadro(
   alProgresar("Leyendo esa parte…");
   let lineas = agruparEnRenglones(await reconocer(recorte));
   let datos = datosDeRecorte(lineas);
+  paso(`guiada: primera lectura lista (${lineas.length} renglones, ${Object.keys(datos).length} datos)`);
 
   if (!Object.keys(datos).length) {
     alProgresar("Enderezando y leyendo otra vez…");
@@ -156,5 +162,6 @@ export async function leerRecuadro(
     }
   }
 
+  paso("guiada: terminó");
   return { datos, lineas, recorteUrl };
 }
