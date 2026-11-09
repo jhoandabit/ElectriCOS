@@ -275,6 +275,24 @@ button:disabled {
   outline: none;
 }
 
+/* iPhone: el selector de mes (type="month") trae un ancho propio y se salía de la tarjeta. */
+.form-section input[type="month"] {
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  text-align: left;
+}
+.form-section input[type="month"]::-webkit-date-and-time-value {
+  min-width: 0;
+  text-align: left;
+}
+.form-section label {
+  min-width: 0;
+}
+
 .form-section input:focus,
 .form-section select:focus {
   border-color: var(--accent);
