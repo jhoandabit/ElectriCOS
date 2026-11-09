@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { lineasDeTabla, zonaDelEstrato } from "../app/lib/factura/geometria";
+import { lineasDeTabla, zonaDelEstrato, zonaDelMunicipio } from "../app/lib/factura/geometria";
 import { extraerDeTexto } from "../app/lib/factura/extraer-texto";
 
 const caja = (texto: string, x: number, y: number, ancho = 60, alto = 22) => ({
@@ -56,4 +56,15 @@ test("cada fila trae la zona del kWh para releerlo ampliado", async () => {
   const f = filasDeTabla(tabla(0));
   const may = f.find((x) => x.mes === "MAY");
   assert.ok(may && may.kwh === 256 && may.zonaKwh.x > 900 && may.zonaKwh.x < 1000 && may.zonaKwh.alto > 20);
+});
+
+test("zona del municipio: a la derecha de 'Ruta', en su misma fila", () => {
+  const z = zonaDelMunicipio([caja("Ruta:01-21-029-1629", 125, 790, 150)]);
+  assert.ok(z && z.x >= 275 && z.ancho > 300 && z.y < 790 && z.y + z.alto > 790);
+  assert.equal(zonaDelMunicipio([caja("Estrato: 4", 60, 50)]), null);
+});
+
+test("el texto de esa zona devuelve el municipio aunque el nombre de la empresa diga Pereira", () => {
+  const texto = "Empresa de Energía de Pereira domiciliarios\nMunicipio: 147 Cartago  Servicio: Residencial  Ciclo: 108";
+  assert.equal(extraerDeTexto(texto).municipio, "Cartago");
 });

@@ -11,7 +11,7 @@ import { esPdf, girarLienzo, leerPdf, prepararFoto, reducirLienzo, soltarLienzo 
 import { paso } from "./diagnostico";
 import { extraerDeTexto } from "./extraer-texto";
 import { agruparEnRenglones, esErrorDeMemoria, esIOS, leerGraficoDeBarras, reconocer, reiniciarLector } from "./ocr-paddle";
-import { filasDeTabla, textoDeFila, zonaDelEstrato, type FilaTabla } from "./geometria";
+import { filasDeTabla, textoDeFila, zonaDelEstrato, zonaDelMunicipio, type FilaTabla } from "./geometria";
 import { detectarGiro, pareceDerecha, puntajeOrientacion } from "./orientacion";
 import type { AvisoLectura, DatosFactura, FuenteLectura, Giro, ResultadoLectura } from "./tipos";
 import { validarYCompletar } from "./validar";
@@ -71,6 +71,12 @@ async function leerZonaDelEstrato(imagen: HTMLCanvasElement, cajas: Awaited<Retu
   return z.ancla === "estrato" ? `Estrato: ${t}` : `% Subsidio: ${t}`;
 }
 
+/** El municipio es texto chico en una franja de color: si el lector lo saltó, se relee solo esa zona. */
+async function leerZonaDelMunicipio(imagen: HTMLCanvasElement, cajas: Awaited<ReturnType<typeof reconocer>>): Promise<string> {
+  const z = zonaDelMunicipio(cajas);
+  return z ? leerZona(imagen, z) : "";
+}
+
 const medianaDe = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)];
 
 /**
@@ -125,6 +131,13 @@ async function leerImagen(imagen: HTMLCanvasElement, alProgresar: AlProgresar): 
   if (extraerDeTexto(texto).estrato === null) {
     const extra = await leerZonaDelEstrato(imagen, cajas).catch(() => "");
     paso(`estrato: lectura de la zona ${extra ? "con texto" : "sin texto"}`);
+    if (extra) texto += `\n${extra}`;
+  }
+
+  // Sin municipio en el texto (el lector se saltó "Municipio: 147 Cartago"): se relee esa franja.
+  if (extraerDeTexto(texto).municipio === null) {
+    const extra = await leerZonaDelMunicipio(imagen, cajas).catch(() => "");
+    paso(`municipio: lectura de la zona ${extra ? "con texto" : "sin texto"}`);
     if (extra) texto += `\n${extra}`;
   }
 

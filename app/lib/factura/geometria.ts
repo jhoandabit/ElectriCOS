@@ -111,3 +111,13 @@ export function zonaDelEstrato(cajas: CajaPos[]): { x: number; y: number; ancho:
     ancla: est ? "estrato" : "subsidio",
   };
 }
+
+/**
+ * Dónde está "Municipio: 147 Cartago" cuando el lector se lo saltó: en la fila de "Ruta: …",
+ * a su derecha (después vienen "Servicio" y "Ciclo"). Rectángulo en píxeles de la imagen leída.
+ */
+export function zonaDelMunicipio(cajas: CajaPos[]): { x: number; y: number; ancho: number; alto: number } | null {
+  const ruta = fichas(cajas).find((f) => /^ruta/.test(f.t));
+  if (!ruta) return null;
+  return { x: ruta.x1, y: ruta.cy - ruta.h * 1.3, ancho: ruta.h * 30, alto: ruta.h * 2.6 };
+}
