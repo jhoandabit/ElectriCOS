@@ -349,3 +349,24 @@ test("municipio: 'calidad' no cuenta como Cali; se queda Cartago", () => {
 test("municipio: sigue reconociendo Cali cuando es la palabra completa", () => {
   assert.equal(extraerDeTexto("Alcaldia municipal de Cali\nconsumo 200 kwh").municipio, "Cali");
 });
+
+test("municipio: el nombre de la empresa (Energía de Pereira) no pesa; se queda Cartago", () => {
+  const texto = [
+    "ENERGÍA DE PEREIRA S.A. E.S.P.  Energía de Pereira  Energía de Pereira",
+    "Ruta: 01-21-029-1629  Munlcipio: 147 Cartago  Servicio: Residencial  Ciclo: 108",
+    "Atención al cliente Energía de Pereira  línea 018000",
+  ].join("\n");
+  assert.equal(extraerDeTexto(texto).municipio, "Cartago");
+});
+
+test("municipio: sin etiqueta legible, Cartago gana aunque la empresa diga Pereira", () => {
+  const texto = [
+    "ENERGÍA DE PEREIRA S.A. E.S.P.  Energía de Pereira  Energía de Pereira  Energía de Pereira",
+    "Ruta: 01-21-029-1629   147 Cartago   Servicio: Residencial",
+  ].join("\n");
+  assert.equal(extraerDeTexto(texto).municipio, "Cartago");
+});
+
+test("municipio: una factura de Pereira real sigue dando Pereira", () => {
+  assert.equal(extraerDeTexto("Ruta: 01-01-001-0001  Municipio: 001 Pereira  Servicio: Residencial").municipio, "Pereira");
+});

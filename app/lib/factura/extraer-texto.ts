@@ -109,8 +109,10 @@ function ultimaPalabra(texto: string, palabra: string): number {
   return ultima;
 }
 
-function buscarMunicipio(t: string): string | null {
-  const etiqueta = t.match(/\bmunicipi[oc0]\s*[:.]\s*(?:\d{1,5}\s*[-.]?\s*)?([a-z][a-z .]{2,30}?)(?=\s{2,}|\s*[-,:/(]|\s+(?:depto|departamento|ciclo|estrato|servicio|barrio|ruta|valle|risaralda|caldas)|\n|$)/);
+function buscarMunicipio(textoCompleto: string): string | null {
+  // "Energía de Pereira" es el nombre de la empresa, no el municipio del inmueble.
+  const t = textoCompleto.replace(/energia\s+de\s+pereira(?:\s+s\.?\s*a\.?(?:\s+e\.?\s*s\.?\s*p\.?)?)?/g, " ");
+  const etiqueta = t.match(/\bmuni[a-z01|!]{1,3}p[il1|][oc0]\s*[:.]\s*(?:\d{1,5}\s*[-.]?\s*)?([a-z][a-z .]{2,30}?)(?=\s{2,}|\s*[-,:/(]|\s+(?:depto|departamento|ciclo|estrato|servicio|barrio|ruta|valle|risaralda|caldas)|\n|$)/);
   const deEtiqueta = conocidoONada(etiqueta?.[1]);
   if (deEtiqueta) return deEtiqueta;
 
