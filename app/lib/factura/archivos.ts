@@ -132,6 +132,7 @@ async function cargarPdfjs() {
   // El lector corre en la página (no en un Worker aparte) para que las
   // funciones de compatibilidad de arriba también le lleguen a él.
   try {
+    // @ts-ignore: pdfjs no publica tipos para este módulo
     const trabajador = await import("pdfjs-dist/legacy/build/pdf.worker.mjs");
     (globalThis as any).pdfjsWorker = trabajador;
   } catch {
