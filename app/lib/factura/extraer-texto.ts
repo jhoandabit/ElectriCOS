@@ -255,6 +255,25 @@ function buscarLecturasEtiquetadas(t: string) {
   };
 }
 
+/**
+ * Liquidación por tramos (estratos 1-3 y también 4 en Energía de Pereira):
+ *   "0-173  173  890.1747 ..."  /  ">173  242  890.1747 ..."  → consumo total = 173 + 242 = 415.
+ * Los rótulos "Consumo kWh" de esa tabla apuntan a UN tramo, no al total.
+ */
+export function buscarTramos(t: string): { subsistencia: number; excedente: number; total: number } | null {
+  const bajo = t.match(/\b0\s*[-–]\s*(\d{2,4})\s+(\d{1,4})\b/);
+  if (!bajo) return null;
+  const limite = Number(bajo[1]);
+  const subsistencia = Number(bajo[2]);
+  if (subsistencia <= 0 || subsistencia > limite) return null;
+  const alto = t.match(new RegExp(String.raw`>\s*${limite}\s+(\d{1,4})\b`));
+  if (!alto) return null;
+  const excedente = Number(alto[1]);
+  if (excedente <= 0) return null;
+  const total = subsistencia + excedente;
+  return total >= 5 && total < 3000 ? { subsistencia, excedente, total } : null;
+}
+
 function buscarConsumo(t: string): number | null {
   const patrones = [
     // "Consumo: 186 kWh" / "Consumo facturado 186 kwh"
@@ -346,6 +365,11 @@ export function extraerDeTexto(textoOriginal: string): DatosFactura {
   }
 
   datos.consumoKwh = buscarConsumo(t) ?? triple?.consumo ?? null;
+  // Si lo leído es solo un tramo de la liquidación, el consumo es la suma de los tramos.
+  const tramos = buscarTramos(t);
+  if (tramos && (datos.consumoKwh === null || datos.consumoKwh === tramos.subsistencia || datos.consumoKwh === tramos.excedente)) {
+    datos.consumoKwh = tramos.total;
+  }
 
   const promedio = primerNumeroTras(t, /(?:consumo\s*)?promedio(?:\s*(?:ultimos|de\s*los\s*ultimos)\s*\d+\s*meses)?/, 30);
   datos.promedioKwh = promedio !== null && promedio >= 5 && promedio < 3000 ? promedio : null;

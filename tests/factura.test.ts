@@ -311,3 +311,28 @@ test("estrato 1: el % de subsidio entre el transformador y el estrato no impide 
   // Lo que ya funcionaba sigue igual: estrato 4 sin subsidio.
   assert.equal(extraerDeTexto(`147 Cartago  Residencial  108\nCT0172  4\n${MEDIDOR_E1}`).estrato, 4);
 });
+
+test("liquidación por tramos: el consumo es la suma de los tramos (415 = 173 + 242), no un tramo", () => {
+  const texto = [
+    "Periodo facturado: 12/JUL/2026 - 13/AGO/2026   Días facturados: 33",
+    "LIQUIDACIÓN DEL CONSUMO ACTUAL",
+    "Rango  Consumo kWh  Valor kWh  Total energía  Subsidio  Total",
+    "0-173  173  890.1747  154,000  0  154,000",
+    ">173  242  890.1747  215,422  215,422",
+  ].join("\n");
+  assert.equal(extraerDeTexto(texto).consumoKwh, 415);
+});
+
+test("liquidación por tramos: estrato 1 (173 + 212 = 385)", () => {
+  const texto = [
+    "Rango  Consumo kWh  Valor kWh  Total energía  Subsidio  Total",
+    "0-173  173  905.0529  156,574  -76,807  79,767",
+    ">173  212  905.0529  191,871  191,871",
+  ].join("\n");
+  assert.equal(extraerDeTexto(texto).consumoKwh, 385);
+});
+
+test("liquidación por tramos: con un solo tramo no se inventa un total", () => {
+  const texto = "Consumo activa 120 kWh\n0-173  120  905.0529  108,603";
+  assert.equal(extraerDeTexto(texto).consumoKwh, 120);
+});
