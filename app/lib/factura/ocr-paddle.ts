@@ -13,12 +13,18 @@ import { paso } from "./diagnostico";
 type Punto = [number, number];
 export type CajaTexto = { texto: string; confianza: number; poligono: Punto[] };
 
-type Ocr = { predict: (entrada: Blob | HTMLCanvasElement) => Promise<{ items: { text: string; score: number; poly: Punto[] }[] }[]> };
+type Ocr = {
+  predict: (entrada: Blob | HTMLCanvasElement) => Promise<{ items: { text: string; score: number; poly: Punto[] }[] }[]>;
+  dispose?: () => unknown;
+  destroy?: () => unknown;
+  terminate?: () => unknown;
+};
 
 const MODELO_DETECCION = "PP-OCRv6_tiny_det";
 const MODELO_RECONOCIMIENTO = "PP-OCRv6_tiny_rec";
 
 let instancia: Promise<Ocr> | null = null;
+let lecturas = 0;
 
 /**
  * iPhone / iPad (cualquier navegador: todos usan el motor de Safari).
@@ -70,6 +76,27 @@ export function cargarLector(): Promise<Ocr> {
   return instancia;
 }
 
+/** ¿El error es de falta de memoria del celular? */
+export function esErrorDeMemoria(e: unknown) {
+  return /memory|memoria|out of bounds|abort|allocation|alloc/i.test((e as Error)?.message ?? String(e));
+}
+
+/**
+ * Descarta el lector actual (y su memoria) para crear uno limpio en la próxima lectura.
+ * Tras quedarse sin memoria, el lector anterior queda inservible.
+ */
+export async function reiniciarLector() {
+  const anterior = instancia;
+  instancia = null;
+  lecturas = 0;
+  try {
+    const ocr = anterior ? await anterior : null;
+    await (ocr?.dispose?.() ?? ocr?.destroy?.() ?? ocr?.terminate?.());
+  } catch {
+    // si no se puede cerrar, igual se crea uno nuevo
+  }
+}
+
 /**
  * Empieza a cargar el lector sin esperar (al abrir la pantalla de factura).
  * En iPhone NO: con el lector en memoria, Safari cierra la página mientras
@@ -79,8 +106,6 @@ export function precargarLector() {
   if (esIOS()) return;
   void cargarLector().catch(() => undefined);
 }
-
-let lecturas = 0;
 
 export async function reconocer(imagen: Blob | HTMLCanvasElement): Promise<CajaTexto[]> {
   const ocr = await cargarLector();

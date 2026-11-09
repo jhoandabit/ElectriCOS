@@ -10,7 +10,7 @@
 import { esPdf, girarLienzo, leerPdf, prepararFoto, reducirLienzo, soltarLienzo } from "./archivos";
 import { paso } from "./diagnostico";
 import { extraerDeTexto } from "./extraer-texto";
-import { agruparEnRenglones, leerGraficoDeBarras, reconocer } from "./ocr-paddle";
+import { agruparEnRenglones, esErrorDeMemoria, esIOS, leerGraficoDeBarras, reconocer, reiniciarLector } from "./ocr-paddle";
 import { filasDeTabla, textoDeFila, zonaDelEstrato, type FilaTabla } from "./geometria";
 import { detectarGiro } from "./orientacion";
 import type { AvisoLectura, DatosFactura, FuenteLectura, Giro, ResultadoLectura } from "./tipos";
@@ -172,27 +172,43 @@ export async function leerFactura(archivo: File, alProgresar: AlProgresar, texto
     throw new Error("Selecciona una foto o un PDF de la factura.");
   }
 
-  alProgresar("Preparando la foto…");
-  const foto = await prepararFoto(archivo, 2000);
-  paso(`foto preparada para leer: ${foto.canvas.width}x${foto.canvas.height}`);
-  alProgresar("Revisando cómo quedó la foto…");
-  const { giro, puntajes } = await detectarGiro((g) => textoDePrueba(foto.canvas, g));
-  paso(`orientación: giro ${giro}° (puntajes ${JSON.stringify(puntajes)})`);
-  let lienzo = foto.canvas;
-  if (giro) {
-    alProgresar("La foto estaba de lado: enderezándola…");
-    lienzo = girarLienzo(foto.canvas, giro);
-    soltarLienzo(foto.canvas); // la versión sin girar ya no hace falta
+  // Si el celular se queda sin memoria (iPhone), se reintenta con una foto más pequeña:
+  // la primera vez se intenta con la mejor calidad y solo se baja si hace falta.
+  const lados = esIOS() ? [2000, 1500, 1200] : [2000];
+  for (let i = 0; ; i++) {
+    const lado = lados[i];
+    try {
+      alProgresar("Preparando la foto…");
+      const foto = await prepararFoto(archivo, lado);
+      let lienzo = foto.canvas;
+      try {
+        paso(`foto preparada para leer: ${foto.canvas.width}x${foto.canvas.height}`);
+        alProgresar("Revisando cómo quedó la foto…");
+        const { giro, puntajes } = await detectarGiro((g) => textoDePrueba(foto.canvas, g));
+        paso(`orientación: giro ${giro}° (puntajes ${JSON.stringify(puntajes)})`);
+        if (giro) {
+          alProgresar("La foto estaba de lado: enderezándola…");
+          lienzo = girarLienzo(foto.canvas, giro);
+          soltarLienzo(foto.canvas); // la versión sin girar ya no hace falta
+        }
+        const nuevo = await leerImagen(lienzo, alProgresar);
+        const texto = textoPrevio ? `${textoPrevio}\n${nuevo}` : nuevo;
+        if (!nuevo.trim()) {
+          avisos.push({
+            nivel: "error",
+            campo: "general",
+            mensaje: "No se encontró texto en la foto. Tómala de frente, completa y con buena luz, o usa la lectura guiada.",
+          });
+        }
+        return terminar(extraerDeTexto(texto), "ocr-local", avisos, texto, giro);
+      } finally {
+        soltarLienzo(lienzo); // ya no se usa: se libera la memoria de la foto grande
+      }
+    } catch (e) {
+      if (!esErrorDeMemoria(e) || i >= lados.length - 1) throw e;
+      paso(`sin memoria con ${lado} px: se reintenta con ${lados[i + 1]} px`);
+      alProgresar("Al celular le faltó memoria: probando con una foto más liviana…");
+      await reiniciarLector();
+    }
   }
-  const nuevo = await leerImagen(lienzo, alProgresar);
-  soltarLienzo(lienzo); // ya no se usa: se libera la memoria de la foto grande
-  const texto = textoPrevio ? `${textoPrevio}\n${nuevo}` : nuevo;
-  if (!nuevo.trim()) {
-    avisos.push({
-      nivel: "error",
-      campo: "general",
-      mensaje: "No se encontró texto en la foto. Tómala de frente, completa y con buena luz, o usa la lectura guiada.",
-    });
-  }
-  return terminar(extraerDeTexto(texto), "ocr-local", avisos, texto, giro);
 }
