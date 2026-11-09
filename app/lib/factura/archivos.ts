@@ -7,6 +7,7 @@
 const LADO_MAXIMO = 2000;
 
 import type { Giro } from "./tipos";
+import { instalarCompatibilidad } from "./compat-safari";
 
 export function esPdf(archivo: File) {
   return archivo.type === "application/pdf" || archivo.name.toLowerCase().endsWith(".pdf");
@@ -125,8 +126,17 @@ export async function miniaturaFoto(archivo: Blob, lado = 1100, giro: Giro = 0):
 }
 
 async function cargarPdfjs() {
+  instalarCompatibilidad();
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
   pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/legacy/build/pdf.worker.mjs", import.meta.url).toString();
+  // El lector corre en la página (no en un Worker aparte) para que las
+  // funciones de compatibilidad de arriba también le lleguen a él.
+  try {
+    const trabajador = await import("pdfjs-dist/legacy/build/pdf.worker.mjs");
+    (globalThis as any).pdfjsWorker = trabajador;
+  } catch {
+    // si no carga, pdfjs usa su Worker normal
+  }
   return pdfjs;
 }
 
